@@ -1535,6 +1535,15 @@
             </div>
           </div>
           <div class="subsection">
+            <div class="subsection-title">Interazione</div>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.78rem;color:var(--text-dim)">
+              <input type="checkbox" id="f-touch-stop-speaking"
+                onchange="sendToPreview({type:'avatarParam',key:'touch_stop_speaking',value:this.checked?1:0})"/>
+              Interrompi parlato al tocco dello schermo
+            </label>
+          </div>
+
+          <div class="subsection">
             <div class="subsection-title">Onde</div>
             <div class="fields" style="gap:12px">
               <div class="field">
@@ -2199,7 +2208,8 @@ function selectAvatar(id) {
   const cfs = a.chat_font_size ?? 1.1;
   document.getElementById('s-chat-font-size').value         = cfs;
   document.getElementById('val-chat-font-size').textContent = parseFloat(cfs).toFixed(2);
-  document.getElementById('f-show-controls').checked    = (a.show_controls    ?? 1) !== 0;
+  document.getElementById('f-show-controls').checked         = (a.show_controls      ?? 1) !== 0;
+  document.getElementById('f-touch-stop-speaking').checked  = (a.touch_stop_speaking ?? 0) !== 0;
   setIconPreview('mic',           a.mic_icon           || '');
   setIconPreview('mic-disabled',  a.mic_icon_disabled  || '');
   setIconPreview('audio',         a.audio_icon         || '');
@@ -2792,7 +2802,8 @@ async function saveAvatar() {
     chat_hide_input: document.getElementById('f-chat-hide-input').checked ? 1 : 0,
     chat_font:       document.getElementById('f-chat-font').value,
     chat_font_size:  parseFloat(document.getElementById('s-chat-font-size').value),
-    show_controls:     document.getElementById('f-show-controls').checked    ? 1 : 0,
+    show_controls:          document.getElementById('f-show-controls').checked         ? 1 : 0,
+    touch_stop_speaking:    document.getElementById('f-touch-stop-speaking').checked   ? 1 : 0,
     idle_disabled:      document.getElementById('f-idle-disabled').checked     ? 1 : 0,
     wake_word_enabled:  document.getElementById('f-wake-word-enabled').checked ? 1 : 0,
     wake_word_always:   document.getElementById('f-wake-word-always').checked  ? 1 : 0,

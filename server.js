@@ -184,7 +184,8 @@ app.get('/api/avatar/:id', (req, res) => {
           vad_threshold, vad_silence_duration, vad_min_speech_duration, vad_min_blob_size, vad_wake_timeout,
           mic_bubble_visible, mic_bubble_text, mic_bubble_position, mic_bubble_x, mic_bubble_y,
           mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
-          mic_bubble_bg_image, mic_bubble_width, mic_bubble_height } = avatar;
+          mic_bubble_bg_image, mic_bubble_width, mic_bubble_height,
+          touch_stop_speaking } = avatar;
   res.json({ id, name, background, bg_video, model_file, idle_start, idle_end,
              speech_start, speech_end, anim_pingpong, tts_text_normalization, tts_language_normalization, avatar_scale, avatar_offset_x,
              avatar_offset_y, avatar_rot_y, camera_z, camera_y, camera_look_at_y,
@@ -198,7 +199,7 @@ app.get('/api/avatar/:id', (req, res) => {
              vad_threshold, vad_silence_duration, vad_min_speech_duration, vad_min_blob_size, vad_wake_timeout,
              mic_bubble_visible, mic_bubble_text, mic_bubble_x, mic_bubble_y,
              mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
-             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height });
+             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height, touch_stop_speaking });
 });
 
 // ─── Route: Kiosk page ────────────────────────────────────────────────────────
@@ -231,7 +232,8 @@ app.get('/api/preview/:id', (req, res) => {
           vad_threshold, vad_silence_duration, vad_min_speech_duration, vad_min_blob_size, vad_wake_timeout,
           mic_bubble_visible, mic_bubble_text, mic_bubble_position, mic_bubble_x, mic_bubble_y,
           mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
-          mic_bubble_bg_image, mic_bubble_width, mic_bubble_height } = avatar;
+          mic_bubble_bg_image, mic_bubble_width, mic_bubble_height,
+          touch_stop_speaking } = avatar;
   res.json({ id, name, background, bg_video, model_file, idle_start, idle_end,
              speech_start, speech_end, anim_pingpong, tts_text_normalization, tts_language_normalization, avatar_scale, avatar_offset_x,
              avatar_offset_y, avatar_rot_y, camera_z, camera_y, camera_look_at_y,
@@ -245,7 +247,7 @@ app.get('/api/preview/:id', (req, res) => {
              vad_threshold, vad_silence_duration, vad_min_speech_duration, vad_min_blob_size, vad_wake_timeout,
              mic_bubble_visible, mic_bubble_text, mic_bubble_x, mic_bubble_y,
              mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
-             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height });
+             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height, touch_stop_speaking });
 });
 
 // ─── Route: Admin login ───────────────────────────────────────────────────────
@@ -355,7 +357,8 @@ app.put('/api/admin/avatars/:id', (req, res) => {
                   'mcp_url','mcp_headers','mcp_tool_filter','tavily_api_key','tavily_enabled',
                   'mic_bubble_visible','mic_bubble_text','mic_bubble_x','mic_bubble_y',
                   'mic_bubble_font','mic_bubble_font_size','mic_bubble_bg_color','mic_bubble_border_color','mic_bubble_border_radius','mic_bubble_bg_image','mic_bubble_width','mic_bubble_height',
-                  'rate_limit_rpm'];
+                  'rate_limit_rpm',
+                  'touch_stop_speaking'];
   const updates = [];
   const values  = [];
   for (const f of fields) {

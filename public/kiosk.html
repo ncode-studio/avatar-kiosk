@@ -1965,6 +1965,14 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   updateMicBtn();
   updateAudioBtn();
+
+  document.body.addEventListener('pointerdown', e => {
+    if (!CONFIG.touchStopSpeaking) return;
+    if (!state.currentAudio) return;
+    const tag = e.target?.tagName?.toUpperCase();
+    if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+    stopCurrentAudio();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2207,12 +2215,16 @@ function updateMicBubble() {
   bubble.style.background   = img ? 'transparent' : BG;
   bubble.style.border       = `1px solid ${BORDER}`;
   bubble.style.borderRadius = RADIUS + 'px';
-  bubble.style.fontSize     = (CONFIG.micBubbleFontSize || 13) + 'px';
   bubble.style.fontFamily   = CONFIG.micBubbleFont || 'inherit';
   bubble.style.overflow     = 'visible';
-  bubble.style.width        = CONFIG.micBubbleWidth  > 0 ? CONFIG.micBubbleWidth  + 'px' : '';
-  bubble.style.height       = CONFIG.micBubbleHeight > 0 ? CONFIG.micBubbleHeight + 'px' : '';
-  bubble.style.maxWidth     = CONFIG.micBubbleWidth  > 0 ? 'none' : '190px';
+
+  const _bubMobile = window.innerWidth <= 600;
+  const _bubScale  = _bubMobile ? 0.7 : 1;
+  bubble.style.fontSize     = Math.round((CONFIG.micBubbleFontSize || 13) * _bubScale) + 'px';
+  bubble.style.padding      = _bubMobile ? '5px 8px' : '8px 12px';
+  bubble.style.width        = CONFIG.micBubbleWidth  > 0 ? Math.round(CONFIG.micBubbleWidth  * _bubScale) + 'px' : '';
+  bubble.style.height       = CONFIG.micBubbleHeight > 0 ? Math.round(CONFIG.micBubbleHeight * _bubScale) + 'px' : '';
+  bubble.style.maxWidth     = CONFIG.micBubbleWidth  > 0 ? 'none' : Math.round(190 * _bubScale) + 'px';
   bubble.style.display      = 'block';
 
   requestAnimationFrame(() => {
@@ -3202,7 +3214,8 @@ function applyIdleParam(key, value) {
         if (d.chat_hide_input !== undefined) applyParamLive('chat_hide_input', d.chat_hide_input);
         if (d.chat_font       !== undefined) applyParamLive('chat_font',       d.chat_font);
         if (d.chat_font_size  !== undefined) applyParamLive('chat_font_size',  d.chat_font_size);
-        if (d.show_controls    !== undefined) applyParamLive('show_controls',    d.show_controls);
+        if (d.show_controls         !== undefined) applyParamLive('show_controls',         d.show_controls);
+        if (d.touch_stop_speaking   !== undefined) applyParamLive('touch_stop_speaking',   d.touch_stop_speaking);
         if (d.theme           !== undefined) applyTheme(d.theme);
         if (d.idle_disabled  !== undefined) {
           CONFIG.idleDisabled = !!d.idle_disabled;
@@ -3373,7 +3386,8 @@ function applyParamLive(key, v) {
     audio_disabled_color:        () => { CONFIG.audioDisabledColor      = v; updateAudioBtn(); },
     audio_border_color:          () => { CONFIG.audioBorderColor        = v; updateAudioBtn(); },
     audio_border_disabled_color: () => { CONFIG.audioBorderDisabledColor= v; updateAudioBtn(); },
-    theme:             () => applyTheme(v),
+    theme:                () => applyTheme(v),
+    touch_stop_speaking:  () => { CONFIG.touchStopSpeaking = v !== 0 && v !== false; },
   };
 
   map[key]?.();
@@ -3423,6 +3437,7 @@ async function initAvatar() {
     CONFIG.micBubbleBgImage      = cfg.mic_bubble_bg_image      || '';
     CONFIG.micBubbleWidth        = cfg.mic_bubble_width         ?? 0;
     CONFIG.micBubbleHeight       = cfg.mic_bubble_height        ?? 0;
+    CONFIG.touchStopSpeaking       = (cfg.touch_stop_speaking ?? 0) !== 0;
     CONFIG.micVisible              = (cfg.mic_visible   ?? 1) !== 0;
     CONFIG.micBgColor              = cfg.mic_bg_color              || 'rgba(248,113,113,0.15)';
     CONFIG.micDisabledColor        = cfg.mic_disabled_color        || 'rgba(248,113,113,0.15)';
