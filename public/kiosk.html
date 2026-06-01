@@ -1814,8 +1814,9 @@ function _updateMicBtnMode(mode) {
     const brd = CONFIG.micBorderColor || 'rgba(34,211,160,.5)';
     btn.style.background  = `color-mix(in srgb, var(--accent) ${_alphaOf(bg)}%, transparent)`;
     btn.style.borderColor = `color-mix(in srgb, var(--accent) ${_alphaOf(brd)}%, transparent)`;
-  } else {
-    // Tutti gli altri stati: ripristina colori configurati
+  } else if (mode !== 'recording') {
+    // Tutti gli altri stati tranne recording (che è gestito da setMicWaveVisible):
+    // ripristina colori configurati
     if (CONFIG.micEnabled) {
       btn.style.background  = CONFIG.micBgColor     || 'rgba(34,211,160,.15)';
       btn.style.borderColor = CONFIG.micBorderColor || 'rgba(34,211,160,.5)';
