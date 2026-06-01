@@ -2498,15 +2498,23 @@ function updatePttBtn(viewportW) {
     if (iconEl) iconEl.style.opacity = '0';
     if (fallEl) fallEl.style.opacity = '0';
   } else if (mode === 'recording') {
-    // Attivamente in ascolto PTT: sfondo colore tema con stessa opacità dell'icona principale
+    // In ascolto PTT: sfondo colore tema + icona base visibile, nessuna waveform
     const _idleBg  = CONFIG.pttBgColor  || CONFIG.micBgColor  || 'rgba(34,211,160,.15)';
     const _idleBrd = CONFIG.pttBorderColor || CONFIG.micBorderColor || 'rgba(34,211,160,.5)';
     const _alphaOf = c => { const m = c.match(/[\d.]+\)$/); return m ? Math.round(parseFloat(m[0]) * 100) : 15; };
     btn.style.background  = `color-mix(in srgb, var(--accent) ${_alphaOf(_idleBg)}%, transparent)`;
     btn.style.borderColor = `color-mix(in srgb, var(--accent) ${_alphaOf(_idleBrd)}%, transparent)`;
-    if (waveEl) waveEl.style.display = 'flex';
-    if (iconEl) iconEl.style.opacity = '0';
-    if (fallEl) fallEl.style.opacity = '0';
+    if (waveEl) waveEl.style.display = 'none';
+    if (iconEl) iconEl.style.opacity = '';
+    if (fallEl) fallEl.style.opacity = '';
+    const ico = CONFIG.pttIcon || CONFIG.micIcon;
+    if (ico) {
+      if (iconEl) { iconEl.src = `/${ico}?t=${ts}`; iconEl.style.setProperty('width', icoSz, 'important'); iconEl.style.setProperty('height', icoSz, 'important'); iconEl.style.display = 'block'; iconEl.style.filter = 'none'; }
+      if (fallEl) fallEl.style.display = 'none';
+    } else {
+      if (iconEl) iconEl.style.display = 'none';
+      if (fallEl) { fallEl.textContent = '🎙'; fallEl.style.setProperty('font-size', icoSz, 'important'); fallEl.style.display = ''; }
+    }
   } else {
     // Idle / thinking: colori normali, icona
     btn.style.background  = CONFIG.pttBgColor || CONFIG.micBgColor || 'rgba(34,211,160,.15)';
