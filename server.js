@@ -1432,7 +1432,10 @@ app.post('/api/chat', async (req, res) => {
     const basePrompt = (avatar?.system_prompt || DEFAULT_SYSTEM_PROMPT)
       .replace(/\{\{nome\}\}/gi, baseName)
       .replace(/\{\{sessionID\}\}/gi, kioskSessionId || sid);
-    const systemPrompt = `Il tuo nome è ${baseName}. Non presentarti ad ogni risposta.\n\n${basePrompt}`;
+    const mcpToolPrefix = (avatar?.avatar_mode === 'mcp' && avatar?.mcp_url?.trim())
+      ? `Hai accesso a strumenti esterni (tool) che DEVI usare per rispondere alle domande dell'utente. Non rispondere mai basandoti sulla tua conoscenza interna: usa sempre i tool disponibili per recuperare le informazioni richieste. Se nessun tool è appropriato, dillo esplicitamente.\n\n`
+      : '';
+    const systemPrompt = `Il tuo nome è ${baseName}. Non presentarti ad ogni risposta.\n\n${mcpToolPrefix}${basePrompt}`;
 
     const sid = sessionId || uuidv4();
     if (!sessions.has(sid)) sessions.set(sid, []);
@@ -1451,7 +1454,7 @@ app.post('/api/chat', async (req, res) => {
     try { mcpHeaders = JSON.parse(avatar?.mcp_headers || '{}'); } catch {}
     const mcpFilter = (avatar?.mcp_tool_filter || '').split(',').map(s => s.trim()).filter(Boolean);
 
-    if (mcpUrl && (avatar?.avatar_mode === 'mcp' || avatar?.avatar_mode === 'embedded' || !avatar?.avatar_mode)) {
+    if (mcpUrl && avatar?.avatar_mode === 'mcp') {
       try {
         const transport = await mcpDetectTransport(mcpUrl, mcpHeaders);
 
@@ -1545,7 +1548,10 @@ app.post('/api/chat', async (req, res) => {
       let iterMsgs = [...msgs];
       for (let i = 0; i < 3; i++) {
         const body = { model: aiModel, max_tokens: aiTokens, messages: iterMsgs };
-        if (oaiTools.length) body.tools = oaiTools;
+        if (oaiTools.length) {
+          body.tools = oaiTools;
+          if (i === 0 && avatar?.avatar_mode === 'mcp') body.tool_choice = 'required';
+        }
         const r = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: { Authorization: `Bearer ${aiKey}`, 'Content-Type': 'application/json' },
@@ -1588,7 +1594,11 @@ app.post('/api/chat', async (req, res) => {
       let iterMsgs = [...history];
       for (let i = 0; i < 3; i++) {
         const params = { model: aiModel, max_tokens: aiTokens, system: systemPrompt, messages: iterMsgs };
-        if (claudeTools.length) params.tools = claudeTools;
+        if (claudeTools.length) {
+          params.tools = claudeTools;
+          // In modalità MCP, forza l'uso dei tool al primo turno
+          if (i === 0 && avatar?.avatar_mode === 'mcp') params.tool_choice = { type: 'any' };
+        }
         const response = await aiClient.messages.create(params);
         chatTokensIn  += response.usage?.input_tokens  || 0;
         chatTokensOut += response.usage?.output_tokens || 0;
