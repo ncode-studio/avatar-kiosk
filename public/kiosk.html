@@ -1803,12 +1803,36 @@ const MODE_CONFIG = {
 
 const ACTIVE_MODES = new Set(['listening', 'recording', 'thinking', 'speaking']);
 
+function _updateMicBtnMode(mode) {
+  if (CONFIG.pttEnabled) return; // in modalità PTT il mic non è visibile
+  const btn = document.getElementById('mic-btn');
+  if (!btn || CONFIG.micVisible === false) return;
+  const _alphaOf = c => { const m = c.match(/[\d.]+\)$/); return m ? Math.round(parseFloat(m[0]) * 100) : 15; };
+  if (mode === 'listening') {
+    // Wakeword rilevata, in attesa di voce: colore tema
+    const bg  = CONFIG.micBgColor  || 'rgba(34,211,160,.15)';
+    const brd = CONFIG.micBorderColor || 'rgba(34,211,160,.5)';
+    btn.style.background  = `color-mix(in srgb, var(--accent) ${_alphaOf(bg)}%, transparent)`;
+    btn.style.borderColor = `color-mix(in srgb, var(--accent) ${_alphaOf(brd)}%, transparent)`;
+  } else {
+    // Tutti gli altri stati: ripristina colori configurati
+    if (CONFIG.micEnabled) {
+      btn.style.background  = CONFIG.micBgColor     || 'rgba(34,211,160,.15)';
+      btn.style.borderColor = CONFIG.micBorderColor || 'rgba(34,211,160,.5)';
+    } else {
+      btn.style.background  = CONFIG.micDisabledColor       || 'rgba(248,113,113,.15)';
+      btn.style.borderColor = CONFIG.micBorderDisabledColor || 'rgba(248,113,113,.4)';
+    }
+  }
+}
+
 function setMode(mode) {
   state.mode = mode;
 
   setMicWaveVisible(CONFIG.micEnabled && mode === 'recording');
   setAudioWaveVisible(CONFIG.audioEnabled && mode === 'speaking');
   if (CONFIG.pttEnabled) { updatePttBtn(); }
+  _updateMicBtnMode(mode);
 
   if (ACTIVE_MODES.has(mode)) {
     // Qualsiasi attività: ferma il conto alla rovescia
