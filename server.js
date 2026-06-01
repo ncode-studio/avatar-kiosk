@@ -185,7 +185,8 @@ app.get('/api/avatar/:id', (req, res) => {
           mic_bubble_visible, mic_bubble_text, mic_bubble_position, mic_bubble_x, mic_bubble_y,
           mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
           mic_bubble_bg_image, mic_bubble_width, mic_bubble_height,
-          touch_stop_speaking } = avatar;
+          touch_stop_speaking,
+          ptt_enabled, ptt_icon, ptt_icon_size, ptt_icon_x, ptt_icon_y, ptt_bg_color, ptt_border_color } = avatar;
   res.json({ id, name, background, bg_video, model_file, idle_start, idle_end,
              speech_start, speech_end, anim_pingpong, tts_text_normalization, tts_language_normalization, avatar_scale, avatar_offset_x,
              avatar_offset_y, avatar_rot_y, camera_z, camera_y, camera_look_at_y,
@@ -199,7 +200,8 @@ app.get('/api/avatar/:id', (req, res) => {
              vad_threshold, vad_silence_duration, vad_min_speech_duration, vad_min_blob_size, vad_wake_timeout,
              mic_bubble_visible, mic_bubble_text, mic_bubble_x, mic_bubble_y,
              mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
-             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height, touch_stop_speaking });
+             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height, touch_stop_speaking,
+             ptt_enabled, ptt_icon, ptt_icon_size, ptt_icon_x, ptt_icon_y, ptt_bg_color, ptt_border_color });
 });
 
 // ─── Route: Kiosk page ────────────────────────────────────────────────────────
@@ -233,7 +235,8 @@ app.get('/api/preview/:id', (req, res) => {
           mic_bubble_visible, mic_bubble_text, mic_bubble_position, mic_bubble_x, mic_bubble_y,
           mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
           mic_bubble_bg_image, mic_bubble_width, mic_bubble_height,
-          touch_stop_speaking } = avatar;
+          touch_stop_speaking,
+          ptt_enabled, ptt_icon, ptt_icon_size, ptt_icon_x, ptt_icon_y, ptt_bg_color, ptt_border_color } = avatar;
   res.json({ id, name, background, bg_video, model_file, idle_start, idle_end,
              speech_start, speech_end, anim_pingpong, tts_text_normalization, tts_language_normalization, avatar_scale, avatar_offset_x,
              avatar_offset_y, avatar_rot_y, camera_z, camera_y, camera_look_at_y,
@@ -247,7 +250,8 @@ app.get('/api/preview/:id', (req, res) => {
              vad_threshold, vad_silence_duration, vad_min_speech_duration, vad_min_blob_size, vad_wake_timeout,
              mic_bubble_visible, mic_bubble_text, mic_bubble_x, mic_bubble_y,
              mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
-             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height, touch_stop_speaking });
+             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height, touch_stop_speaking,
+             ptt_enabled, ptt_icon, ptt_icon_size, ptt_icon_x, ptt_icon_y, ptt_bg_color, ptt_border_color });
 });
 
 // ─── Route: Admin login ───────────────────────────────────────────────────────
@@ -358,7 +362,8 @@ app.put('/api/admin/avatars/:id', (req, res) => {
                   'mic_bubble_visible','mic_bubble_text','mic_bubble_x','mic_bubble_y',
                   'mic_bubble_font','mic_bubble_font_size','mic_bubble_bg_color','mic_bubble_border_color','mic_bubble_border_radius','mic_bubble_bg_image','mic_bubble_width','mic_bubble_height',
                   'rate_limit_rpm',
-                  'touch_stop_speaking'];
+                  'touch_stop_speaking',
+                  'ptt_enabled','ptt_icon','ptt_icon_size','ptt_icon_x','ptt_icon_y','ptt_bg_color','ptt_border_color'];
   const updates = [];
   const values  = [];
   for (const f of fields) {
@@ -743,12 +748,13 @@ const uploadIcon = multer({ storage: multer.diskStorage({
 
 app.post('/api/admin/avatars/:id/upload-icon/:type', uploadIcon.single('icon'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nessun file ricevuto' });
-  const type = req.params.type; // 'mic' | 'audio' | 'idle'
-  if (!['mic', 'mic-disabled', 'audio', 'audio-disabled', 'idle', 'mic-bubble'].includes(type)) return res.status(400).json({ error: 'Tipo non valido' });
+  const type = req.params.type; // 'mic' | 'audio' | 'idle' | 'ptt'
+  if (!['mic', 'mic-disabled', 'audio', 'audio-disabled', 'idle', 'mic-bubble', 'ptt'].includes(type)) return res.status(400).json({ error: 'Tipo non valido' });
   const iconFile = `icons/${req.file.filename}`;
   const col = type === 'mic' ? 'mic_icon' : type === 'mic-disabled' ? 'mic_icon_disabled'
             : type === 'audio' ? 'audio_icon' : type === 'audio-disabled' ? 'audio_icon_disabled'
-            : type === 'mic-bubble' ? 'mic_bubble_bg_image' : 'idle_icon_img';
+            : type === 'mic-bubble' ? 'mic_bubble_bg_image'
+            : type === 'ptt' ? 'ptt_icon' : 'idle_icon_img';
   db.prepare(`UPDATE avatars SET ${col} = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(iconFile, req.params.id);
   res.json({ ok: true, [col]: iconFile });
@@ -1698,7 +1704,7 @@ app.get('/api/admin/avatars/:id/export', requireAdmin, (req, res) => {
   const avatar = db.prepare('SELECT * FROM avatars WHERE id = ?').get(req.params.id);
   if (!avatar) return res.status(404).json({ error: 'Non trovato' });
 
-  const FILE_FIELDS = ['model_file', 'bg_video', 'idle_video', 'idle_bg_image', 'idle_icon_img', 'mic_icon', 'mic_icon_disabled', 'audio_icon', 'audio_icon_disabled'];
+  const FILE_FIELDS = ['model_file', 'bg_video', 'idle_video', 'idle_bg_image', 'idle_icon_img', 'mic_icon', 'mic_icon_disabled', 'audio_icon', 'audio_icon_disabled', 'ptt_icon'];
   const files = {};
   for (const field of FILE_FIELDS) {
     const rel = avatar[field];
@@ -1724,7 +1730,7 @@ app.post('/api/admin/avatars/import', requireAdmin, express.json({ limit: '200mb
   if (!bundle?.version || !bundle?.params) return res.status(400).json({ error: 'File non valido' });
 
   const newId = uuidv4().split('-')[0];
-  const FILE_FIELDS = ['model_file', 'bg_video', 'idle_video', 'idle_bg_image', 'idle_icon_img', 'mic_icon', 'mic_icon_disabled', 'audio_icon', 'audio_icon_disabled'];
+  const FILE_FIELDS = ['model_file', 'bg_video', 'idle_video', 'idle_bg_image', 'idle_icon_img', 'mic_icon', 'mic_icon_disabled', 'audio_icon', 'audio_icon_disabled', 'ptt_icon'];
 
   // Ripristina file binari
   const remapped = { ...bundle.params };
