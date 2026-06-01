@@ -2531,8 +2531,10 @@ let _pttRecognition = null;
 let _pttFinalText = '';
 let _pttInterimText = '';
 let _pttStartedAt = 0;
+let _pttStopPending = false; // pointerup arrivato prima che _pttStart finisse
 
 async function _pttStart() {
+  _pttStopPending = false;
   if (state.mode === 'speaking') { stopCurrentAudio(); return; }
   if (state.mode === 'thinking' || state.mode === 'recording') return;
 
@@ -2594,12 +2596,15 @@ async function _pttStart() {
 
   try { rec.start(); } catch(e) { console.warn('[PTT] start errore:', e); setMode('listening'); return; }
   setMode('recording');
+  // Se pointerup era già arrivato durante await wakeUp(), stoppa subito
+  if (_pttStopPending) { _pttStopPending = false; _pttStop(); return; }
 }
 
 function _pttStop() {
+  _pttStopPending = false;
   const btn = document.getElementById('ptt-btn');
   if (btn) { btn.classList.remove('ptt-pressing'); btn.style.transform = (window.innerWidth <= 600 ? 'translateX(-50%)' : ''); updatePttBtn(); }
-  if (!_pttRecognition) return;
+  if (!_pttRecognition) { _pttStopPending = true; return; } // start non ancora completato
   const rec = _pttRecognition;
   _pttRecognition = null;
 
