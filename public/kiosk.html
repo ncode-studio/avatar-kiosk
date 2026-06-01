@@ -346,6 +346,16 @@
       transition: opacity 0.3s;
     }
     body.idle-hidden #mic-bubble { opacity: 0; }
+    @keyframes bubble-bounce {
+      0%,100% { transform: translateY(0) scale(1); }
+      15%      { transform: translateY(-14px) scale(1.07); }
+      30%      { transform: translateY(0) scale(1); }
+      45%      { transform: translateY(-8px) scale(1.04); }
+      60%      { transform: translateY(0) scale(1); }
+      75%      { transform: translateY(-4px) scale(1.02); }
+      90%      { transform: translateY(0) scale(1); }
+    }
+    #mic-bubble.bouncing { animation: bubble-bounce 1.4s ease-in-out; }
 
     /* ─── Forme d'onda nei bottoni mic/audio ─────────── */
     .btn-wave {
@@ -902,6 +912,7 @@ const CONFIG = {
   micBubbleBgImage:      '',
   micBubbleWidth:        0,
   micBubbleHeight:       0,
+  micBubbleBounce:       false,
   audioIconSize: 44,
   audioIconX:   0,
   audioIconY:   0,
@@ -2275,6 +2286,7 @@ function updateMicBubble() {
 
   if (!CONFIG.micBubbleVisible || !(CONFIG.micBubbleText || '').trim() || window.innerWidth <= 600) {
     bubble.style.display = 'none';
+    _stopBubbleBounce();
     return;
   }
 
@@ -2366,7 +2378,26 @@ function updateMicBubble() {
       }
     }
     Object.assign(arr.style, { position: 'absolute', width: '0', height: '0' }, as);
+    _startBubbleBounce();
   });
+}
+
+let _bubbleBounceTimer = null;
+function _startBubbleBounce() {
+  _stopBubbleBounce();
+  if (!CONFIG.micBubbleBounce) return;
+  _bubbleBounceTimer = setInterval(() => {
+    const bubble = document.getElementById('mic-bubble');
+    if (!bubble || bubble.style.display === 'none') return;
+    bubble.classList.remove('bouncing');
+    void bubble.offsetWidth; // forza reflow per riavviare l'animazione
+    bubble.classList.add('bouncing');
+    setTimeout(() => bubble.classList.remove('bouncing'), 1400);
+  }, 30000);
+}
+function _stopBubbleBounce() {
+  clearInterval(_bubbleBounceTimer);
+  _bubbleBounceTimer = null;
 }
 
 function updateAudioBtn(viewportW) {
@@ -3664,6 +3695,7 @@ function applyParamLive(key, v) {
     mic_bubble_bg_image:         () => { CONFIG.micBubbleBgImage      = v; updateMicBubble(); },
     mic_bubble_width:            () => { CONFIG.micBubbleWidth        = +v; updateMicBubble(); },
     mic_bubble_height:           () => { CONFIG.micBubbleHeight       = +v; updateMicBubble(); },
+    mic_bubble_bounce:           () => { CONFIG.micBubbleBounce       = v !== 0 && v !== false; _startBubbleBounce(); },
     mic_bg_color:                () => { CONFIG.micBgColor              = v; updateMicBtn(); },
     mic_disabled_color:          () => { CONFIG.micDisabledColor        = v; updateMicBtn(); },
     mic_border_color:            () => { CONFIG.micBorderColor          = v; updateMicBtn(); },
@@ -3732,6 +3764,7 @@ async function initAvatar() {
     CONFIG.micBubbleBgImage      = cfg.mic_bubble_bg_image      || '';
     CONFIG.micBubbleWidth        = cfg.mic_bubble_width         ?? 0;
     CONFIG.micBubbleHeight       = cfg.mic_bubble_height        ?? 0;
+    CONFIG.micBubbleBounce       = !!(cfg.mic_bubble_bounce);
     CONFIG.touchStopSpeaking       = (cfg.touch_stop_speaking ?? 0) !== 0;
     CONFIG.pttEnabled     = (cfg.ptt_enabled ?? 0) !== 0;
     CONFIG.pttIcon        = cfg.ptt_icon        || '';

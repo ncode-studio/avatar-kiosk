@@ -1412,6 +1412,11 @@
                              sendToPreview({type:'avatarParam',key:'mic_bubble_height',value:+this.value})"/>
                 </div>
               </div>
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.78rem;color:var(--text-dim);margin-bottom:8px">
+                <input type="checkbox" id="f-mic-bubble-bounce"
+                  onchange="sendToPreview({type:'avatarParam',key:'mic_bubble_bounce',value:this.checked?1:0})"/>
+                Effetto rimbalzo ogni 30s
+              </label>
               <div class="fields" style="gap:8px;grid-template-columns:1fr 1fr;margin-bottom:8px">
                 <div class="field">
                   <label>Sfondo <span id="f-mic-bubble-bg-alpha-val">95%</span></label>
@@ -2318,6 +2323,7 @@ function selectAvatar(id) {
   document.getElementById('val-mic-bubble-radius').textContent = _mbrr;
   const _mbw = a.mic_bubble_width ?? 0; document.getElementById('s-mic-bubble-width').value = _mbw; document.getElementById('val-mic-bubble-width').textContent = _mbw;
   const _mbh = a.mic_bubble_height ?? 0; document.getElementById('s-mic-bubble-height').value = _mbh; document.getElementById('val-mic-bubble-height').textContent = _mbh;
+  document.getElementById('f-mic-bubble-bounce').checked = !!(a.mic_bubble_bounce);
   loadColorField('f-mic-bubble-bg-color',     'f-mic-bubble-bg-alpha',     a.mic_bubble_bg_color     || 'rgba(255,255,255,0.95)');
   setMicBubbleImageUI(a.mic_bubble_bg_image || '');
   document.getElementById('f-mic-bubble-bg-alpha-val').textContent     = document.getElementById('f-mic-bubble-bg-alpha').value + '%';
@@ -2927,6 +2933,7 @@ async function saveAvatar() {
     mic_bubble_bg_image:        (avatars.find(a=>a.id===currentId)||{}).mic_bubble_bg_image || '',
     mic_bubble_width:           +document.getElementById('s-mic-bubble-width').value,
     mic_bubble_height:          +document.getElementById('s-mic-bubble-height').value,
+    mic_bubble_bounce:          document.getElementById('f-mic-bubble-bounce').checked ? 1 : 0,
     mic_bg_color:               buildRgba(document.getElementById('f-mic-bg-color').value,              document.getElementById('f-mic-bg-alpha').value),
     mic_disabled_color:         buildRgba(document.getElementById('f-mic-disabled-color').value,        document.getElementById('f-mic-dis-alpha').value),
     mic_border_color:           buildRgba(document.getElementById('f-mic-border-color').value,          document.getElementById('f-mic-border-alpha').value),

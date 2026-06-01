@@ -234,6 +234,8 @@ if (!existing.includes('mic_bubble_width'))
   db.exec("ALTER TABLE avatars ADD COLUMN mic_bubble_width INTEGER DEFAULT 0");
 if (!existing.includes('mic_bubble_height'))
   db.exec("ALTER TABLE avatars ADD COLUMN mic_bubble_height INTEGER DEFAULT 0");
+if (!existing.includes('mic_bubble_bounce'))
+  db.exec("ALTER TABLE avatars ADD COLUMN mic_bubble_bounce INTEGER DEFAULT 0");
 if (!existing.includes('touch_stop_speaking'))
   db.exec("ALTER TABLE avatars ADD COLUMN touch_stop_speaking INTEGER DEFAULT 0");
 if (!existing.includes('ptt_enabled'))
