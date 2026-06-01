@@ -415,6 +415,7 @@
     /* ─── Idle Overlay ──────────────────────────────── */
     body.idle-hidden #mic-btn,
     body.idle-hidden #audio-btn,
+    body.idle-hidden #ptt-btn,
     body.idle-hidden #interaction-panel {
       opacity: 0 !important;
       pointer-events: none !important;
@@ -2621,10 +2622,12 @@ function _initPttListeners() {
   btn.addEventListener('pointerup',     e => { if (CONFIG.pttEnabled) _pttStop(); });
   btn.addEventListener('pointercancel', e => { if (CONFIG.pttEnabled) _pttStop(); });
 
-  // In PTT mode blocca il click sull'idle overlay (che chiamerebbe wakeUp + VAD)
+  // In PTT mode blocca il click sull'idle overlay solo se non siamo in idle
   const overlay = document.getElementById('idle-overlay');
   if (overlay) {
-    overlay.addEventListener('click', e => { if (CONFIG.pttEnabled) e.stopImmediatePropagation(); }, true);
+    overlay.addEventListener('click', e => {
+      if (CONFIG.pttEnabled && overlay.classList.contains('hidden')) e.stopImmediatePropagation();
+    }, true);
   }
 }
 
@@ -3871,10 +3874,7 @@ async function initAvatar() {
     CONFIG.wakeWordAlwaysRequired = !!(cfg.wake_word_always);
     CONFIG.wakeWords = cfg.wake_words || '';
     if (CONFIG.pttEnabled) {
-      // PTT: nascondi idle subito, avvia wakeword se abilitata
-      document.getElementById('idle-overlay').classList.add('hidden');
-      setControlsVisible(true);
-      setMode('listening');
+      // PTT: avvia wakeword se abilitata; idle overlay e controlli seguono il flusso normale
       if (CONFIG.wakeWordEnabled || CONFIG.wakeWordAlwaysRequired)
         setTimeout(() => { if (state.mode === 'idle' || state.mode === 'listening') startWakeWord(); }, 500);
     } else if (CONFIG.idleDisabled) {
