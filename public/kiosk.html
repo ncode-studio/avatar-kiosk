@@ -337,6 +337,10 @@
       white-space: normal;
       box-shadow: 0 4px 16px rgba(0,0,0,0.18);
       pointer-events: none;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       z-index: 101;
       display: none;
       transition: opacity 0.3s;
@@ -2291,8 +2295,8 @@ function updateMicBubble() {
   const A = 8; // dimensione freccia px
 
   bubble.innerHTML = img
-    ? `<div style="position:absolute;inset:0;border-radius:${RADIUS}px;background:url(/${img}) center/cover no-repeat"></div><span style="position:relative;z-index:1">${filled}</span><span class="mb-arrow"></span>`
-    : `${filled}<span class="mb-arrow"></span>`;
+    ? `<div style="position:absolute;inset:0;border-radius:${RADIUS}px;background:url(/${img}) center/cover no-repeat"></div><span style="position:relative;z-index:1;text-align:center;width:100%">${filled}</span><span class="mb-arrow"></span>`
+    : `<span style="text-align:center;width:100%">${filled}</span><span class="mb-arrow"></span>`;
 
   bubble.style.background   = img ? 'transparent' : BG;
   bubble.style.border       = `1px solid ${BORDER}`;
@@ -2307,7 +2311,7 @@ function updateMicBubble() {
   bubble.style.width        = CONFIG.micBubbleWidth  > 0 ? Math.round(CONFIG.micBubbleWidth  * _bubScale) + 'px' : '';
   bubble.style.height       = CONFIG.micBubbleHeight > 0 ? Math.round(CONFIG.micBubbleHeight * _bubScale) + 'px' : '';
   bubble.style.maxWidth     = CONFIG.micBubbleWidth  > 0 ? 'none' : Math.round(190 * _bubScale) + 'px';
-  bubble.style.display      = 'block';
+  bubble.style.display      = 'flex';
 
   requestAnimationFrame(() => {
     const br = btn.getBoundingClientRect();
