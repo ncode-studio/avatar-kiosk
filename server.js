@@ -1451,7 +1451,7 @@ app.post('/api/chat', async (req, res) => {
     try { mcpHeaders = JSON.parse(avatar?.mcp_headers || '{}'); } catch {}
     const mcpFilter = (avatar?.mcp_tool_filter || '').split(',').map(s => s.trim()).filter(Boolean);
 
-    if (mcpUrl && avatar?.avatar_mode === 'mcp') {
+    if (mcpUrl && (avatar?.avatar_mode === 'mcp' || avatar?.avatar_mode === 'embedded' || !avatar?.avatar_mode)) {
       try {
         const transport = await mcpDetectTransport(mcpUrl, mcpHeaders);
 
