@@ -1258,11 +1258,6 @@
                   onchange="sendToPreview({type:'avatarParam',key:'chat_hide_input',value:this.checked?1:0})"/>
                 Nascondi input testo
               </label>
-              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.78rem;color:var(--text-dim)">
-                <input type="checkbox" id="f-show-controls" checked
-                  onchange="sendToPreview({type:'avatarParam',key:'show_controls',value:this.checked?1:0})"/>
-                Mostra indicatori mic / audio
-              </label>
             </div>
           </div>
         </div>
@@ -1541,6 +1536,71 @@
                 onchange="sendToPreview({type:'avatarParam',key:'touch_stop_speaking',value:this.checked?1:0})"/>
               Interrompi parlato al tocco dello schermo
             </label>
+          </div>
+
+          <!-- ── Push-To-Talk ───────────────────────────── -->
+          <div class="subsection">
+            <div class="subsection-title">
+              <span>Push-To-Talk</span>
+              <label style="display:flex;align-items:center;gap:6px;font-size:.7rem;color:var(--text-dim);cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0">
+                <input type="checkbox" id="f-ptt-enabled"
+                  onchange="sendToPreview({type:'avatarParam',key:'ptt_enabled',value:this.checked?1:0})"/> Abilitato
+              </label>
+            </div>
+            <div class="field-hint" style="font-size:11px;color:#888;margin-bottom:8px">
+              Quando attivo, nasconde mic e altoparlante. Tieni premuto per registrare, rilascia per inviare. Durante il parlato mostra l'onda audio.
+            </div>
+            <!-- Icona PTT -->
+            <div class="icon-row">
+              <label class="icon-slot" title="Clicca per cambiare icona PTT">
+                <div class="icon-slot-thumb" id="thumb-ptt">
+                  <img id="preview-ptt-icon" src="" alt=""/>
+                  <span class="slot-placeholder">🎤</span>
+                </div>
+                <span class="icon-slot-label">Icona</span>
+                <input type="file" accept="image/*" style="display:none" onchange="uploadIcon('ptt',this)"/>
+              </label>
+            </div>
+            <!-- Dimensione e posizione -->
+            <div class="fields" style="gap:10px">
+              <div class="field">
+                <label>Dim. <span id="val-ptt-icon-size">80</span>px</label>
+                <input type="range" id="s-ptt-icon-size" min="10" max="300" step="2" value="80"
+                  oninput="document.getElementById('val-ptt-icon-size').textContent=this.value;
+                           sendToPreview({type:'avatarParam',key:'ptt_icon_size',value:this.value})"/>
+              </div>
+              <div class="field">
+                <label>X <span id="val-ptt-icon-x">0</span></label>
+                <input type="range" id="s-ptt-icon-x" min="-600" max="600" step="1" value="0"
+                  oninput="document.getElementById('val-ptt-icon-x').textContent=this.value;
+                           sendToPreview({type:'avatarParam',key:'ptt_icon_x',value:this.value})"/>
+              </div>
+              <div class="field">
+                <label>Y <span id="val-ptt-icon-y">0</span></label>
+                <input type="range" id="s-ptt-icon-y" min="-600" max="600" step="1" value="0"
+                  oninput="document.getElementById('val-ptt-icon-y').textContent=this.value;
+                           sendToPreview({type:'avatarParam',key:'ptt_icon_y',value:this.value})"/>
+              </div>
+            </div>
+            <!-- Colori -->
+            <div class="fields" style="gap:8px;margin-top:8px;grid-template-columns:1fr 1fr">
+              <div class="field">
+                <label>Sfondo <span id="f-ptt-bg-alpha-val">15%</span></label>
+                <div style="display:flex;align-items:center;gap:4px">
+                  <input type="color" id="f-ptt-bg-color" value="#f87171" oninput="colorChange('f-ptt-bg-color','f-ptt-bg-alpha','ptt_bg_color')"/>
+                  <input type="range" id="f-ptt-bg-alpha" min="0" max="100" step="1" value="15" style="flex:1"
+                    oninput="document.getElementById('f-ptt-bg-alpha-val').textContent=this.value+'%';colorChange('f-ptt-bg-color','f-ptt-bg-alpha','ptt_bg_color')"/>
+                </div>
+              </div>
+              <div class="field">
+                <label>Bordo <span id="f-ptt-border-alpha-val">50%</span></label>
+                <div style="display:flex;align-items:center;gap:4px">
+                  <input type="color" id="f-ptt-border-color" value="#f87171" oninput="colorChange('f-ptt-border-color','f-ptt-border-alpha','ptt_border_color')"/>
+                  <input type="range" id="f-ptt-border-alpha" min="0" max="100" step="1" value="50" style="flex:1"
+                    oninput="document.getElementById('f-ptt-border-alpha-val').textContent=this.value+'%';colorChange('f-ptt-border-color','f-ptt-border-alpha','ptt_border_color')"/>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="subsection">
@@ -2208,8 +2268,20 @@ function selectAvatar(id) {
   const cfs = a.chat_font_size ?? 1.1;
   document.getElementById('s-chat-font-size').value         = cfs;
   document.getElementById('val-chat-font-size').textContent = parseFloat(cfs).toFixed(2);
-  document.getElementById('f-show-controls').checked         = (a.show_controls      ?? 1) !== 0;
   document.getElementById('f-touch-stop-speaking').checked  = (a.touch_stop_speaking ?? 0) !== 0;
+  document.getElementById('f-ptt-enabled').checked          = (a.ptt_enabled          ?? 0) !== 0;
+  setIconPreview('ptt', a.ptt_icon || '');
+  const pttSize = a.ptt_icon_size ?? 80;
+  document.getElementById('s-ptt-icon-size').value = pttSize;
+  document.getElementById('val-ptt-icon-size').textContent = pttSize;
+  document.getElementById('s-ptt-icon-x').value = a.ptt_icon_x ?? 0;
+  document.getElementById('val-ptt-icon-x').textContent = a.ptt_icon_x ?? 0;
+  document.getElementById('s-ptt-icon-y').value = a.ptt_icon_y ?? 0;
+  document.getElementById('val-ptt-icon-y').textContent = a.ptt_icon_y ?? 0;
+  loadColorField('f-ptt-bg-color',     'f-ptt-bg-alpha',     a.ptt_bg_color     || 'rgba(248,113,113,0.15)');
+  document.getElementById('f-ptt-bg-alpha-val').textContent     = document.getElementById('f-ptt-bg-alpha').value + '%';
+  loadColorField('f-ptt-border-color', 'f-ptt-border-alpha', a.ptt_border_color || 'rgba(248,113,113,0.5)');
+  document.getElementById('f-ptt-border-alpha-val').textContent = document.getElementById('f-ptt-border-alpha').value + '%';
   setIconPreview('mic',           a.mic_icon           || '');
   setIconPreview('mic-disabled',  a.mic_icon_disabled  || '');
   setIconPreview('audio',         a.audio_icon         || '');
@@ -2526,6 +2598,8 @@ function setPreviewMode(mode) {
   const wrap = document.getElementById('preview-frame-wrap');
   wrap.className = `mode-${mode}`;
   _resizePreview();
+  const { w } = PREVIEW_MODES[mode];
+  sendToPreview({ type: 'previewResize', width: w });
 }
 
 function _resizePreview() {
@@ -2802,8 +2876,13 @@ async function saveAvatar() {
     chat_hide_input: document.getElementById('f-chat-hide-input').checked ? 1 : 0,
     chat_font:       document.getElementById('f-chat-font').value,
     chat_font_size:  parseFloat(document.getElementById('s-chat-font-size').value),
-    show_controls:          document.getElementById('f-show-controls').checked         ? 1 : 0,
     touch_stop_speaking:    document.getElementById('f-touch-stop-speaking').checked   ? 1 : 0,
+    ptt_enabled:       document.getElementById('f-ptt-enabled').checked   ? 1 : 0,
+    ptt_icon_size:     parseInt(document.getElementById('s-ptt-icon-size').value),
+    ptt_icon_x:        parseInt(document.getElementById('s-ptt-icon-x').value),
+    ptt_icon_y:        parseInt(document.getElementById('s-ptt-icon-y').value),
+    ptt_bg_color:      buildRgba(document.getElementById('f-ptt-bg-color').value,     document.getElementById('f-ptt-bg-alpha').value),
+    ptt_border_color:  buildRgba(document.getElementById('f-ptt-border-color').value, document.getElementById('f-ptt-border-alpha').value),
     idle_disabled:      document.getElementById('f-idle-disabled').checked     ? 1 : 0,
     wake_word_enabled:  document.getElementById('f-wake-word-enabled').checked ? 1 : 0,
     wake_word_always:   document.getElementById('f-wake-word-always').checked  ? 1 : 0,
@@ -3137,7 +3216,9 @@ async function uploadIcon(type, input) {
   const data = await res.json();
   if (!res.ok) { toast('Errore: ' + data.error, 'error'); return; }
   const col = type === 'mic' ? 'mic_icon' : type === 'mic-disabled' ? 'mic_icon_disabled'
-            : type === 'audio' ? 'audio_icon' : type === 'audio-disabled' ? 'audio_icon_disabled' : 'idle_icon_img';
+            : type === 'audio' ? 'audio_icon' : type === 'audio-disabled' ? 'audio_icon_disabled'
+            : type === 'ptt' ? 'ptt_icon'
+            : 'idle_icon_img';
   setIconPreview(type, data[col]);
   avatars = avatars.map(a => a.id===currentId ? {...a, [col]: data[col]} : a);
   const msgType = type === 'idle' ? 'idleParam' : 'avatarParam';

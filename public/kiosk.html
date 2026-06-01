@@ -642,33 +642,29 @@
         top: auto !important;
         bottom: max(var(--btn-mobile-bottom, 20px), env(safe-area-inset-bottom, 4px)) !important;
         right: auto !important;
-        left: calc(50% - var(--btn-half-total-w, 27px)) !important;
-        width:  var(--mic-mobile-size, 22px) !important;
-        height: var(--mic-mobile-size, 22px) !important;
-      }
-      #mic-btn img, #mic-btn span {
-        width:  var(--mic-icon-mobile-size, 14px) !important;
-        height: var(--mic-icon-mobile-size, 14px) !important;
-        font-size: var(--mic-icon-mobile-size, 14px) !important;
+        left: calc(50% - var(--btn-half-total-w, 34px)) !important;
       }
       #audio-btn {
         top: auto !important;
         bottom: max(var(--btn-mobile-bottom, 20px), env(safe-area-inset-bottom, 4px)) !important;
         right: auto !important;
-        left: calc(50% - var(--btn-half-total-w, 27px) + var(--mic-mobile-size, 22px) + 10px) !important;
-        width:  var(--audio-mobile-size, 22px) !important;
-        height: var(--audio-mobile-size, 22px) !important;
-      }
-      #audio-btn img, #audio-btn span {
-        width:  var(--audio-icon-mobile-size, 14px) !important;
-        height: var(--audio-icon-mobile-size, 14px) !important;
-        font-size: var(--audio-icon-mobile-size, 14px) !important;
+        left: var(--audio-mobile-left) !important;
       }
       #input-area input {
         font-size: 16px !important;
       }
       #interaction-panel {
         bottom: var(--mobile-panel-bottom, 80px) !important;
+      }
+      #ptt-btn {
+        bottom: max(var(--btn-mobile-bottom, 20px), env(safe-area-inset-bottom, 4px)) !important;
+        left: var(--ptt-mobile-left) !important;
+        transform: none !important;
+        top: auto !important;
+        right: auto !important;
+      }
+      #ptt-btn.ptt-pressing {
+        transform: translateX(-50%) scale(0.92) !important;
       }
     }
   </style>
@@ -701,6 +697,17 @@
       <div id="audio-wave" class="btn-wave audio-wave" style="display:none"></div>
     </button>
   </div>
+
+  <!-- PTT: dentro #app con position:absolute, stesso pattern di mic/audio -->
+  <button id="ptt-btn" title="Tieni premuto per parlare"
+    style="display:none;position:absolute;top:1.67vh;right:2.96vw;border-radius:50%;padding:0;border:2px solid transparent;
+           align-items:center;justify-content:center;cursor:pointer;
+           transition:background .15s,border-color .15s,transform .1s;
+           font-size:1.4rem;overflow:hidden;z-index:1000;user-select:none;-webkit-user-select:none;touch-action:none">
+    <img id="ptt-icon-img" src="" alt="" style="object-fit:contain;display:none"/>
+    <span id="ptt-icon-fallback">🎤</span>
+    <div id="ptt-wave" class="btn-wave audio-wave" style="display:none"></div>
+  </button>
 
     <!-- Avatar -->
     <div id="avatar-loader">
@@ -856,6 +863,7 @@
 
 </div>
 
+
 <!-- Three.js -->
 <script src="/lib/marked.min.js"></script>
 <script src="/lib/three.min.js"></script>
@@ -919,6 +927,14 @@ const CONFIG = {
   vadWakeTimeout:      5000,
   vadNoiseMult:        2.8,
   sttPrompt:           '',
+  // Push-To-Talk
+  pttEnabled:   false,
+  pttIcon:      '',
+  pttIconSize:  80,
+  pttIconX:     0,
+  pttIconY:     0,
+  pttBgColor:   'rgba(248,113,113,0.15)',
+  pttBorderColor: 'rgba(248,113,113,0.5)',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1297,14 +1313,15 @@ function startWakeWord() {
 
 function stopWakeWord() {
   if (!state.wakeRecognition) return;
-  try { state.wakeRecognition.stop(); } catch(_) {}
+  try { state.wakeRecognition.abort(); } catch(_) {}
   state.wakeRecognition = null;
 }
 
 // ── Barre animate nei bottoni ──────────────────────────────────────────────
 const MIC_WAVE_BARS = 4;
-const micWaveEl  = document.getElementById('mic-wave');
+const micWaveEl   = document.getElementById('mic-wave');
 const audioWaveEl = document.getElementById('audio-wave');
+const pttWaveEl   = document.getElementById('ptt-wave');
 const micWaveBars = [];
 
 for (let i = 0; i < MIC_WAVE_BARS; i++) {
@@ -1317,6 +1334,11 @@ for (let i = 0; i < MIC_WAVE_BARS; i++) {
   const b = document.createElement('div');
   b.className = 'btn-wave-bar';
   audioWaveEl.appendChild(b);
+}
+for (let i = 0; i < MIC_WAVE_BARS; i++) {
+  const b = document.createElement('div');
+  b.className = 'btn-wave-bar';
+  pttWaveEl.appendChild(b);
 }
 
 
@@ -1339,10 +1361,11 @@ function setAudioWaveVisible(show) {
 }
 
 function applyWaveColors() {
-  const mc = CONFIG.micWaveColor  || '#ffffff';
+  const mc = CONFIG.micWaveColor   || '#ffffff';
   const ac = CONFIG.audioWaveColor || '#ffffff';
   micWaveEl.querySelectorAll('.btn-wave-bar').forEach(b => b.style.background = mc);
   audioWaveEl.querySelectorAll('.btn-wave-bar').forEach(b => b.style.background = ac);
+  pttWaveEl.querySelectorAll('.btn-wave-bar').forEach(b => b.style.background = ac);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1769,6 +1792,7 @@ function setMode(mode) {
 
   setMicWaveVisible(CONFIG.micEnabled && mode === 'recording');
   setAudioWaveVisible(CONFIG.audioEnabled && mode === 'speaking');
+  if (CONFIG.pttEnabled) { updatePttBtn(); }
 
   if (ACTIVE_MODES.has(mode)) {
     // Qualsiasi attività: ferma il conto alla rovescia
@@ -1965,6 +1989,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   updateMicBtn();
   updateAudioBtn();
+  updatePttBtn();
+  _initPttListeners();
 
   document.body.addEventListener('pointerdown', e => {
     if (!CONFIG.touchStopSpeaking) return;
@@ -2132,7 +2158,41 @@ function _applyIconToBtn(imgId, fallbackId, path) {
   }
 }
 
-function updateMicBtn() {
+function _repositionMobileButtonsAuto(viewportW) {
+  const isMobile = (viewportW ?? window.innerWidth) <= 600;
+  if (!isMobile) return;
+  const micSz = Math.round((CONFIG.micIconSize  ?? 44) * 0.65);
+  const audSz = Math.round((CONFIG.audioIconSize ?? 44) * 0.65);
+  const pttSz = CONFIG.pttEnabled
+    ? Math.round(((CONFIG.pttIconSize ?? 0) || (CONFIG.micIconSize ?? 44)) * 0.65)
+    : 0;
+  const micVisible = CONFIG.micVisible !== false;
+  const audVisible = CONFIG.audioVisible !== false;
+  const pttVisible = CONFIG.pttEnabled === true;
+  const parts = [
+    ...(micVisible ? [micSz] : []),
+    ...(audVisible ? [audSz] : []),
+    ...(pttVisible ? [pttSz] : []),
+  ];
+  const totW = parts.reduce((acc, s, i) => acc + s + (i > 0 ? 10 : 0), 0);
+  const half = totW / 2;
+  const root = document.documentElement;
+  // Imposta le CSS custom properties usate dalla media query
+  root.style.setProperty('--btn-half-total-w', half + 'px');
+  // --audio-mobile-left: posizione left del pulsante audio nel gruppo centrato
+  const audLeft = micVisible ? `calc(50% - ${half}px + ${micSz + 10}px)` : `calc(50% - ${half}px)`;
+  root.style.setProperty('--audio-mobile-left', audLeft);
+  // --ptt-mobile-left: posizione left del pulsante ptt nel gruppo centrato
+  let pttCursor = 0;
+  if (micVisible) pttCursor += micSz + 10;
+  if (audVisible) pttCursor += audSz + 10;
+  const pttLeft = `calc(50% - ${half}px + ${pttCursor}px)`;
+  root.style.setProperty('--ptt-mobile-left', pttLeft);
+  // Ricalcola il fumetto dopo che il browser ha applicato le nuove posizioni CSS
+  requestAnimationFrame(() => requestAnimationFrame(() => updateMicBubble()));
+}
+
+function updateMicBtn(viewportW) {
   const btn = document.getElementById('mic-btn');
   if (!btn) return;
   const useDisabledIcon = !CONFIG.micEnabled && CONFIG.micIconDisabled;
@@ -2140,40 +2200,56 @@ function updateMicBtn() {
   _applyDisabledIcon('mic-icon-disabled-img', useDisabledIcon ? CONFIG.micIconDisabled : '', 'mic-icon-fallback');
   const micRightVw = ((32 - CONFIG.micIconX) / 1080 * 100).toFixed(4);
   const mic = document.getElementById('mic-btn');
-  const _isMobile = window.innerWidth <= 600;
-  const _micSz  = Math.round(CONFIG.micIconSize  * (_isMobile ? 0.6 : 1));
-  const _audSz  = Math.round(CONFIG.audioIconSize * (_isMobile ? 0.6 : 1));
-  const _totW   = _micSz + 10 + _audSz;
+  const _isMobile = (viewportW ?? window.innerWidth) <= 600;
+  const _micSz  = Math.round((CONFIG.micIconSize  ?? 44) * (_isMobile ? 0.65 : 1));
+  const _audSz  = Math.round((CONFIG.audioIconSize ?? 44) * (_isMobile ? 0.65 : 1));
+  const _pttSz  = CONFIG.pttEnabled && _isMobile
+    ? Math.round(((CONFIG.pttIconSize ?? 0) || (CONFIG.micIconSize ?? 44)) * 0.65)
+    : 0;
+  const _micVisible = CONFIG.micVisible !== false;
+  const _audVisible = CONFIG.audioVisible !== false;
+  const _pttVisible = CONFIG.pttEnabled;
+  const _parts = [
+    ...(_micVisible ? [_micSz] : []),
+    ...(_audVisible ? [_audSz] : []),
+    ...(_pttVisible && _isMobile ? [_pttSz] : []),
+  ];
+  const _totW = _parts.reduce((acc, s, i) => acc + s + (i > 0 ? 10 : 0), 0);
   const root = document.documentElement;
 
   if (_isMobile) {
-    // Layout mobile: posizione fissa, ignora offset Y del desktop
     const GAP_BTN_INPUT = 16;
+    const _tallestBtn = Math.max(_micSz, _audSz, _pttSz);
     root.style.setProperty('--btn-mobile-bottom',   '30px');
-    root.style.setProperty('--mobile-panel-bottom', (30 + _micSz + GAP_BTN_INPUT) + 'px');
+    root.style.setProperty('--mobile-panel-bottom', (30 + _tallestBtn + GAP_BTN_INPUT) + 'px');
   } else {
     const _cb = CONFIG._chatBottom || 0;
     root.style.setProperty('--btn-mobile-bottom', Math.max(8, Math.round((_cb - _micSz) / 2)) + CONFIG.micIconY + 'px');
   }
 
-  root.style.setProperty('--mic-mobile-size',        _micSz + 'px');
-  root.style.setProperty('--audio-mobile-size',      _audSz + 'px');
-  root.style.setProperty('--btn-half-total-w',       (_totW / 2) + 'px');
+  root.style.setProperty('--mic-mobile-size',  _micSz + 'px');
+  root.style.setProperty('--audio-mobile-size', _audSz + 'px');
+  root.style.setProperty('--btn-half-total-w',  (_totW / 2) + 'px');
+
   root.style.setProperty('--mic-icon-mobile-size',   Math.round(_micSz * 0.64) + 'px');
   root.style.setProperty('--audio-icon-mobile-size', Math.round(_audSz * 0.64) + 'px');
   if (mic) {
-    mic.style.width  = CONFIG.micIconSize + 'px';
-    mic.style.height = CONFIG.micIconSize + 'px';
+    mic.style.setProperty('width',  _micSz + 'px', 'important');
+    mic.style.setProperty('height', _micSz + 'px', 'important');
     mic.style.top    = `${20 + CONFIG.micIconY}px`;
     mic.style.bottom = '';
     mic.style.right  = micRightVw + 'vw';
     mic.style.left   = '';
-    const s = Math.round(CONFIG.micIconSize * 0.64);
+    const s = Math.round(_micSz * 0.64);
     const img = document.getElementById('mic-icon-img');
-    if (img) { img.style.width = s+'px'; img.style.height = s+'px'; }
+    if (img) { img.style.setProperty('width', s+'px', 'important'); img.style.setProperty('height', s+'px', 'important'); }
     const imgDis = document.getElementById('mic-icon-disabled-img');
-    if (imgDis) { imgDis.style.width = s+'px'; imgDis.style.height = s+'px'; }
+    if (imgDis) { imgDis.style.setProperty('width', s+'px', 'important'); imgDis.style.setProperty('height', s+'px', 'important'); }
+    const fallEl = document.getElementById('mic-icon-fallback');
+    if (fallEl) { fallEl.style.setProperty('width', s+'px', 'important'); fallEl.style.setProperty('height', s+'px', 'important'); fallEl.style.setProperty('font-size', s+'px', 'important'); }
   }
+  // Posizionamento centrato su mobile: aggiorna le CSS custom properties
+  _repositionMobileButtonsAuto();
   const img = document.getElementById('mic-icon-img');
   btn.style.display = (CONFIG.micVisible === false) ? 'none' : 'flex';
   if (CONFIG.micEnabled) {
@@ -2191,14 +2267,20 @@ function updateMicBtn() {
 
 function updateMicBubble() {
   const bubble = document.getElementById('mic-bubble');
-  const btn    = document.getElementById('mic-btn');
-  console.log('[BUBBLE] visible:', CONFIG.micBubbleVisible, '| text:', JSON.stringify(CONFIG.micBubbleText), '| bubble:', !!bubble, '| btn:', !!btn, '| btnRect:', btn?.getBoundingClientRect());
-  if (!bubble || !btn) return;
+  if (!bubble) return;
 
-  if (!CONFIG.micBubbleVisible || !(CONFIG.micBubbleText || '').trim()) {
+  if (!CONFIG.micBubbleVisible || !(CONFIG.micBubbleText || '').trim() || window.innerWidth <= 600) {
     bubble.style.display = 'none';
     return;
   }
+
+  // Ancora: mic se visibile, altrimenti PTT, altrimenti nascondi
+  const micVisible = CONFIG.micVisible !== false;
+  const pttVisible = !!CONFIG.pttEnabled;
+  const btn = micVisible
+    ? document.getElementById('mic-btn')
+    : (pttVisible ? document.getElementById('ptt-btn') : null);
+  if (!btn) { bubble.style.display = 'none'; return; }
 
   const BG     = CONFIG.micBubbleBgColor      || 'rgba(255,255,255,0.95)';
   const BORDER = CONFIG.micBubbleBorderColor  || 'transparent';
@@ -2283,7 +2365,7 @@ function updateMicBubble() {
   });
 }
 
-function updateAudioBtn() {
+function updateAudioBtn(viewportW) {
   const btn = document.getElementById('audio-btn');
   if (!btn) return;
   const useDisabledIcon = !CONFIG.audioEnabled && CONFIG.audioIconDisabled;
@@ -2292,17 +2374,22 @@ function updateAudioBtn() {
   const audioRightVw = ((32 - CONFIG.audioIconX) / 1080 * 100).toFixed(4);
   const audio = document.getElementById('audio-btn');
   if (audio) {
-    audio.style.width  = CONFIG.audioIconSize + 'px';
-    audio.style.height = CONFIG.audioIconSize + 'px';
+    const _isMobileAud = (viewportW ?? window.innerWidth) <= 600;
+    const _audSzBtn = Math.round((CONFIG.audioIconSize ?? 44) * (_isMobileAud ? 0.65 : 1));
+    audio.style.setProperty('width',  _audSzBtn + 'px', 'important');
+    audio.style.setProperty('height', _audSzBtn + 'px', 'important');
+    document.documentElement.style.setProperty('--audio-mobile-size', _audSzBtn + 'px');
     audio.style.top    = `${20 + CONFIG.micIconSize + 12 + CONFIG.audioIconY}px`;
     audio.style.bottom = '';
     audio.style.right  = audioRightVw + 'vw';
     audio.style.left   = '';
-    const s = Math.round(CONFIG.audioIconSize * 0.64);
+    const s = Math.round(_audSzBtn * 0.64);
     const img = document.getElementById('audio-icon-img');
-    if (img) { img.style.width = s+'px'; img.style.height = s+'px'; }
+    if (img) { img.style.setProperty('width', s+'px', 'important'); img.style.setProperty('height', s+'px', 'important'); }
     const imgDis = document.getElementById('audio-icon-disabled-img');
-    if (imgDis) { imgDis.style.width = s+'px'; imgDis.style.height = s+'px'; }
+    if (imgDis) { imgDis.style.setProperty('width', s+'px', 'important'); imgDis.style.setProperty('height', s+'px', 'important'); }
+    const fallEl = document.getElementById('audio-icon-fallback');
+    if (fallEl) { fallEl.style.setProperty('width', s+'px', 'important'); fallEl.style.setProperty('height', s+'px', 'important'); fallEl.style.setProperty('font-size', s+'px', 'important'); }
   }
   const img = document.getElementById('audio-icon-img');
   btn.style.display = (CONFIG.audioVisible === false) ? 'none' : 'flex';
@@ -2322,6 +2409,188 @@ function toggleAudio() {
   CONFIG.audioEnabled = !CONFIG.audioEnabled;
   updateAudioBtn();
   if (!CONFIG.audioEnabled) stopCurrentAudio();
+}
+
+// ─── Push-To-Talk ─────────────────────────────────────────────────────────────
+function updatePttBtn(viewportW) {
+  const btn = document.getElementById('ptt-btn');
+  if (!btn) return;
+
+  if (!CONFIG.pttEnabled) {
+    btn.style.display = 'none';
+    return;
+  }
+
+
+  const isMobile = (viewportW ?? window.innerWidth) <= 600;
+  const _rawSz = (CONFIG.pttIconSize ?? 0) || (CONFIG.micIconSize ?? 44);
+  const sz = Math.round(_rawSz * (isMobile ? 0.65 : 1));
+  btn.style.setProperty('width',  sz + 'px', 'important');
+  btn.style.setProperty('height', sz + 'px', 'important');
+  document.documentElement.style.setProperty('--ptt-mobile-size', sz + 'px');
+  if (isMobile) {
+    btn.style.bottom    = '30px';
+    btn.style.left      = '50%';
+    btn.style.right     = '';
+    btn.style.transform = 'translateX(-50%)';
+    btn.style.top       = '';
+  } else {
+    // Desktop: parte dalla posizione del mic, offset x/y dedicati PTT
+    const baseTop   = 20 + (CONFIG.micIconY  ?? 0);
+    const baseRight = 32 - (CONFIG.micIconX  ?? 0);
+    const finalTop   = Math.max(5, baseTop  + (CONFIG.pttIconY ?? 0));
+    const finalRight = Math.max(1, baseRight - (CONFIG.pttIconX ?? 0));
+    btn.style.top       = finalTop + 'px';
+    btn.style.right     = (finalRight / 1080 * 100).toFixed(4) + 'vw';
+    btn.style.left      = '';
+    btn.style.bottom    = '';
+    btn.style.transform = '';
+  }
+
+  const iconEl = document.getElementById('ptt-icon-img');
+  const fallEl = document.getElementById('ptt-icon-fallback');
+  const waveEl = document.getElementById('ptt-wave');
+  const mode  = state.mode;
+  const ts    = CONFIG._iconTs || '';
+  const icoSz = Math.round(sz * 0.64) + 'px';
+
+  if (mode === 'speaking') {
+    // Avatar sta parlando: waveform audio
+    btn.style.background  = CONFIG.pttBgColor || CONFIG.audioBgColor  || 'rgba(34,211,160,.15)';
+    btn.style.borderColor = CONFIG.pttBorderColor || CONFIG.audioBorderColor || 'rgba(34,211,160,.5)';
+    if (waveEl) waveEl.style.display = 'flex';
+    if (iconEl) iconEl.style.opacity = '0';
+    if (fallEl) fallEl.style.opacity = '0';
+  } else if (mode === 'recording') {
+    // Attivamente in ascolto PTT: sfondo colore tema + waveform
+    btn.style.background  = 'color-mix(in srgb, var(--accent) 25%, transparent)';
+    btn.style.borderColor = 'color-mix(in srgb, var(--accent) 60%, transparent)';
+    if (waveEl) waveEl.style.display = 'flex';
+    if (iconEl) iconEl.style.opacity = '0';
+    if (fallEl) fallEl.style.opacity = '0';
+  } else {
+    // Idle / thinking: colori normali, icona
+    btn.style.background  = CONFIG.pttBgColor || CONFIG.micBgColor || 'rgba(34,211,160,.15)';
+    btn.style.borderColor = CONFIG.pttBorderColor || CONFIG.micBorderColor || 'rgba(34,211,160,.5)';
+    if (waveEl) waveEl.style.display = 'none';
+    if (iconEl) iconEl.style.opacity = '';
+    if (fallEl) fallEl.style.opacity = '';
+    const ico = CONFIG.pttIcon || CONFIG.micIcon;
+    if (ico) {
+      if (iconEl) { iconEl.src = `/${ico}?t=${ts}`; iconEl.style.setProperty('width', icoSz, 'important'); iconEl.style.setProperty('height', icoSz, 'important'); iconEl.style.display = 'block'; iconEl.style.filter = 'none'; }
+      if (fallEl) fallEl.style.display = 'none';
+    } else {
+      if (iconEl) iconEl.style.display = 'none';
+      if (fallEl) { fallEl.textContent = '🎙'; fallEl.style.setProperty('font-size', icoSz, 'important'); fallEl.style.display = ''; }
+    }
+  }
+  btn.style.display = 'flex';
+}
+
+// PTT tramite SpeechRecognition (come la wakeword)
+let _pttRecognition = null;
+let _pttFinalText = '';
+let _pttInterimText = '';
+let _pttStartedAt = 0;
+
+async function _pttStart() {
+  if (state.mode === 'speaking') { stopCurrentAudio(); return; }
+  if (state.mode === 'thinking' || state.mode === 'recording') return;
+
+  // Se siamo in idle, fare wakeUp per inizializzare la sessione e avviare la wakeword
+  const overlay = document.getElementById('idle-overlay');
+  if (overlay && !overlay.classList.contains('hidden')) await wakeUp();
+
+  // Ferma sempre la wakeword: due SpeechRecognition parallele consumano lo stesso mic
+  stopWakeWord();
+
+  // Sblocca AudioContext su iOS (richiede gesto utente)
+  try {
+    if (!_lipAudioCtx) _lipAudioCtx = new AudioContext();
+    if (_lipAudioCtx.state === 'suspended') await _lipAudioCtx.resume();
+  } catch (_) {}
+
+  // Prima volta: nascondi idle overlay
+  const idleOverlay = document.getElementById('idle-overlay');
+  if (!idleOverlay.classList.contains('hidden')) {
+    idleOverlay.classList.add('hidden');
+    setControlsVisible(true);
+    if (CONFIG.greetingText.trim()) {
+      const gt = CONFIG.greetingText.replace(/\{\{nome\}\}/gi, CONFIG.avatarName).replace(/\{\{sessionID\}\}/gi, state.kioskSessionId);
+      setTimeout(() => addToHistory('avatar', gt), 50);
+    }
+    resetIdleTimer();
+  }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { console.warn('[PTT] SpeechRecognition non supportato'); return; }
+
+  if (_pttRecognition) { try { _pttRecognition.abort(); } catch(_) {} }
+
+  _pttFinalText = '';
+  _pttInterimText = '';
+  _pttStartedAt = Date.now();
+
+  const rec = new SR();
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.lang = CONFIG.sttLanguage || 'it-IT';
+  _pttRecognition = rec;
+
+  rec.onresult = e => {
+    let final = '', interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    if (final) { _pttFinalText += final; _pttInterimText = ''; }
+    else if (interim) _pttInterimText = interim;
+  };
+
+  rec.onerror = e => {
+    if (e.error !== 'aborted' && e.error !== 'no-speech') console.warn('[PTT] SR errore:', e.error);
+  };
+
+  rec.onend = () => {};
+
+  try { rec.start(); } catch(e) { console.warn('[PTT] start errore:', e); setMode('listening'); return; }
+  setMode('recording');
+}
+
+function _pttStop() {
+  const btn = document.getElementById('ptt-btn');
+  if (btn) { btn.classList.remove('ptt-pressing'); btn.style.transform = (window.innerWidth <= 600 ? 'translateX(-50%)' : ''); updatePttBtn(); }
+  if (!_pttRecognition) return;
+  const rec = _pttRecognition;
+  _pttRecognition = null;
+
+  rec.onend = () => {
+    const text = (_pttFinalText + ' ' + _pttInterimText).trim();
+    const duration = Date.now() - _pttStartedAt;
+    if (!text || duration < 300) { setMode('listening'); return; }
+    setMode('thinking');
+    processUserInput(text);
+  };
+  setTimeout(() => { try { rec.stop(); } catch(_) {} }, CONFIG.vadWakeTimeout ?? 5000);
+}
+
+function _initPttListeners() {
+  const btn = document.getElementById('ptt-btn');
+  if (!btn) return;
+  btn.addEventListener('pointerdown', e => {
+    if (!CONFIG.pttEnabled) return;
+    e.preventDefault();
+    btn.setPointerCapture(e.pointerId);
+    _pttStart();
+  });
+  btn.addEventListener('pointerup',     e => { if (CONFIG.pttEnabled) _pttStop(); });
+  btn.addEventListener('pointercancel', e => { if (CONFIG.pttEnabled) _pttStop(); });
+
+  // In PTT mode blocca il click sull'idle overlay (che chiamerebbe wakeUp + VAD)
+  const overlay = document.getElementById('idle-overlay');
+  if (overlay) {
+    overlay.addEventListener('click', e => { if (CONFIG.pttEnabled) e.stopImmediatePropagation(); }, true);
+  }
 }
 
 async function toggleMic() {
@@ -2961,6 +3230,13 @@ window.addEventListener('message', e => {
   const msg = e.data;
   if (!msg) return;
 
+  if (msg.type === 'previewResize') {
+    updateMicBtn(msg.width);
+    updateAudioBtn(msg.width);
+    updatePttBtn(msg.width);
+    return;
+  }
+
 
 
   if (msg.type === 'idleParam') {
@@ -3051,7 +3327,7 @@ window.addEventListener('message', e => {
       document.getElementById('avatar-panel').style.background =
         `radial-gradient(ellipse at 50% 60%, ${color}aa 0%, ${color} 70%)`;
     } else {
-      const stringKeys = ['chat_align', 'model_file', 'mic_icon', 'mic_icon_disabled', 'audio_icon', 'audio_icon_disabled', 'chat_font', 'mic_wave_color', 'audio_wave_color', 'idle_font', 'idle_icon_img', 'theme', 'mic_bg_color', 'mic_disabled_color', 'mic_border_color', 'mic_border_disabled_color', 'audio_bg_color', 'audio_disabled_color', 'audio_border_color', 'audio_border_disabled_color', 'greeting_text', 'stt_prompt', 'wake_words', 'mic_bubble_text', 'mic_bubble_bg_color', 'mic_bubble_border_color', 'mic_bubble_font', 'mic_bubble_bg_image'];
+      const stringKeys = ['chat_align', 'model_file', 'mic_icon', 'mic_icon_disabled', 'audio_icon', 'audio_icon_disabled', 'chat_font', 'mic_wave_color', 'audio_wave_color', 'idle_font', 'idle_icon_img', 'theme', 'mic_bg_color', 'mic_disabled_color', 'mic_border_color', 'mic_border_disabled_color', 'audio_bg_color', 'audio_disabled_color', 'audio_border_color', 'audio_border_disabled_color', 'greeting_text', 'stt_prompt', 'wake_words', 'mic_bubble_text', 'mic_bubble_bg_color', 'mic_bubble_border_color', 'mic_bubble_font', 'mic_bubble_bg_image', 'ptt_bg_color', 'ptt_border_color', 'ptt_icon'];
       const val = stringKeys.includes(msg.key) ? msg.value : parseFloat(msg.value);
       applyParamLive(msg.key, val);
     }
@@ -3216,6 +3492,13 @@ function applyIdleParam(key, value) {
         if (d.chat_font_size  !== undefined) applyParamLive('chat_font_size',  d.chat_font_size);
         if (d.show_controls         !== undefined) applyParamLive('show_controls',         d.show_controls);
         if (d.touch_stop_speaking   !== undefined) applyParamLive('touch_stop_speaking',   d.touch_stop_speaking);
+        if (d.ptt_enabled           !== undefined) applyParamLive('ptt_enabled',           d.ptt_enabled);
+        if (d.ptt_icon              !== undefined) applyParamLive('ptt_icon',              d.ptt_icon);
+        if (d.ptt_icon_size         !== undefined) applyParamLive('ptt_icon_size',         d.ptt_icon_size);
+        if (d.ptt_icon_x            !== undefined) applyParamLive('ptt_icon_x',            d.ptt_icon_x);
+        if (d.ptt_icon_y            !== undefined) applyParamLive('ptt_icon_y',            d.ptt_icon_y);
+        if (d.ptt_bg_color          !== undefined) applyParamLive('ptt_bg_color',          d.ptt_bg_color);
+        if (d.ptt_border_color      !== undefined) applyParamLive('ptt_border_color',      d.ptt_border_color);
         if (d.theme           !== undefined) applyTheme(d.theme);
         if (d.idle_disabled  !== undefined) {
           CONFIG.idleDisabled = !!d.idle_disabled;
@@ -3351,7 +3634,7 @@ function applyParamLive(key, v) {
       if (state.avatar) { scene.remove(state.avatar); state.avatar = null; state.mixer = null; state.mainAction = null; anim.bones = {}; }
       loadGLBAvatar(url + '?t=' + Date.now());
     },
-    show_controls:     () => { document.getElementById('controls-section').style.display = parseInt(v) !== 0 ? 'flex' : 'none'; },
+    show_controls:     () => { /* rimosso: controls-section sempre visibile */ },
     mic_icon:          () => { CONFIG.micIcon         = v; CONFIG._iconTs = Date.now(); updateMicBtn(); },
     mic_icon_disabled: () => { CONFIG.micIconDisabled = v; CONFIG._iconTs = Date.now(); updateMicBtn(); },
     mic_icon_size:   () => { CONFIG.micIconSize   = +v; updateMicBtn(); },
@@ -3364,7 +3647,7 @@ function applyParamLive(key, v) {
     audio_icon_y:      () => { CONFIG.audioIconY    = +v; updateAudioBtn(); },
     mic_wave_color:       () => { CONFIG.micWaveColor       = v; applyWaveColors(); },
     audio_wave_color:     () => { CONFIG.audioWaveColor     = v; applyWaveColors(); },
-    mic_visible:                 () => { CONFIG.micVisible              = v !== 0 && v !== false; updateMicBtn(); },
+    mic_visible:                 () => { CONFIG.micVisible              = v !== 0 && v !== false; updateMicBtn(); _repositionMobileButtonsAuto(); },
     mic_bubble_visible:          () => { CONFIG.micBubbleVisible  = v !== 0 && v !== false; updateMicBubble(); },
     mic_bubble_text:             () => { CONFIG.micBubbleText     = v; updateMicBubble(); },
     mic_bubble_x:                () => { CONFIG.micBubbleX        = +v; updateMicBubble(); },
@@ -3381,13 +3664,20 @@ function applyParamLive(key, v) {
     mic_disabled_color:          () => { CONFIG.micDisabledColor        = v; updateMicBtn(); },
     mic_border_color:            () => { CONFIG.micBorderColor          = v; updateMicBtn(); },
     mic_border_disabled_color:   () => { CONFIG.micBorderDisabledColor  = v; updateMicBtn(); },
-    audio_visible:               () => { CONFIG.audioVisible            = v !== 0 && v !== false; updateAudioBtn(); },
+    audio_visible:               () => { CONFIG.audioVisible            = v !== 0 && v !== false; updateMicBtn(); updateAudioBtn(); _repositionMobileButtonsAuto(); },
     audio_bg_color:              () => { CONFIG.audioBgColor            = v; updateAudioBtn(); },
     audio_disabled_color:        () => { CONFIG.audioDisabledColor      = v; updateAudioBtn(); },
     audio_border_color:          () => { CONFIG.audioBorderColor        = v; updateAudioBtn(); },
     audio_border_disabled_color: () => { CONFIG.audioBorderDisabledColor= v; updateAudioBtn(); },
     theme:                () => applyTheme(v),
     touch_stop_speaking:  () => { CONFIG.touchStopSpeaking = v !== 0 && v !== false; },
+    ptt_enabled:    () => { if (!CONFIG._ready) return; CONFIG.pttEnabled = v !== 0 && v !== false; updateMicBtn(); updateAudioBtn(); updatePttBtn(); _repositionMobileButtonsAuto(); },
+    ptt_icon:       () => { if (!CONFIG._ready) return; CONFIG.pttIcon       = v; CONFIG._iconTs = Date.now(); updatePttBtn(); },
+    ptt_icon_size:  () => { if (!CONFIG._ready) return; CONFIG.pttIconSize   = +v; updatePttBtn(); },
+    ptt_icon_x:     () => { if (!CONFIG._ready) return; CONFIG.pttIconX      = +v; updatePttBtn(); },
+    ptt_icon_y:     () => { if (!CONFIG._ready) return; CONFIG.pttIconY      = +v; updatePttBtn(); },
+    ptt_bg_color:     () => { if (!CONFIG._ready) return; CONFIG.pttBgColor    = v; updatePttBtn(); },
+    ptt_border_color: () => { if (!CONFIG._ready) return; CONFIG.pttBorderColor = v; updatePttBtn(); },
   };
 
   map[key]?.();
@@ -3412,6 +3702,7 @@ async function initAvatar() {
     CONFIG.vadNoiseMult         = cfg.vad_noise_mult          ?? 2.8;
     // Se non c'è un prompt custom, usa il nome avatar come hint minimo per Whisper
     CONFIG.sttPrompt            = cfg.stt_prompt || cfg.name || '';
+    CONFIG.sttLanguage          = cfg.stt_language || 'it-IT';
     CONFIG.avatarModelUrl = cfg.model_file ? `/${cfg.model_file}` : null;
     CONFIG.micIcon         = cfg.mic_icon          || '';
     CONFIG.micIconDisabled = cfg.mic_icon_disabled || '';
@@ -3438,6 +3729,13 @@ async function initAvatar() {
     CONFIG.micBubbleWidth        = cfg.mic_bubble_width         ?? 0;
     CONFIG.micBubbleHeight       = cfg.mic_bubble_height        ?? 0;
     CONFIG.touchStopSpeaking       = (cfg.touch_stop_speaking ?? 0) !== 0;
+    CONFIG.pttEnabled     = (cfg.ptt_enabled ?? 0) !== 0;
+    CONFIG.pttIcon        = cfg.ptt_icon        || '';
+    CONFIG.pttIconSize    = cfg.ptt_icon_size   ?? 80;
+    CONFIG.pttIconX       = cfg.ptt_icon_x      ?? 0;
+    CONFIG.pttIconY       = cfg.ptt_icon_y      ?? 0;
+    CONFIG.pttBgColor     = cfg.ptt_bg_color     || 'rgba(248,113,113,0.15)';
+    CONFIG.pttBorderColor = cfg.ptt_border_color || 'rgba(248,113,113,0.5)';
     CONFIG.micVisible              = (cfg.mic_visible   ?? 1) !== 0;
     CONFIG.micBgColor              = cfg.mic_bg_color              || 'rgba(248,113,113,0.15)';
     CONFIG.micDisabledColor        = cfg.mic_disabled_color        || 'rgba(248,113,113,0.15)';
@@ -3505,11 +3803,14 @@ async function initAvatar() {
       applyParamLive('chat_bottom', CONFIG._chatBottom ?? 0);
       updateMicBtn();
       updateAudioBtn();
+      updatePttBtn();
     });
-    applyParamLive('show_controls',   cfg.show_controls   ?? 1);
+    applyParamLive('show_controls',   1);
     applyTheme(cfg.theme || 'viola');
+    CONFIG._ready = true;
     updateMicBtn();
     updateAudioBtn();
+    updatePttBtn();
     setTimeout(() => updateMicBubble(), 300);
 
     // UI
@@ -3532,7 +3833,14 @@ async function initAvatar() {
     CONFIG.wakeWordEnabled = !!(cfg.wake_word_enabled);
     CONFIG.wakeWordAlwaysRequired = !!(cfg.wake_word_always);
     CONFIG.wakeWords = cfg.wake_words || '';
-    if (CONFIG.idleDisabled) {
+    if (CONFIG.pttEnabled) {
+      // PTT: nascondi idle subito, avvia wakeword se abilitata
+      document.getElementById('idle-overlay').classList.add('hidden');
+      setControlsVisible(true);
+      setMode('listening');
+      if (CONFIG.wakeWordEnabled || CONFIG.wakeWordAlwaysRequired)
+        setTimeout(() => { if (state.mode === 'idle' || state.mode === 'listening') startWakeWord(); }, 500);
+    } else if (CONFIG.idleDisabled) {
       // Casi 1,2,3: mostra chat subito, avvia sessione al primo gesto o dopo 600ms
       document.getElementById('idle-overlay').classList.add('hidden');
       setControlsVisible(true);
@@ -3545,6 +3853,11 @@ async function initAvatar() {
       setTimeout(() => { if (state.mode === 'idle') startWakeWord(); }, 500);
     }
     // Caso 6: nessuna recognition, solo click su overlay → wakeUp()
+
+    // Aggiorna pulsanti con la config caricata
+    updateMicBtn();
+    updateAudioBtn();
+    updatePttBtn();
 
     // Aggiorna camera
     camera.position.set(0, CONFIG.cameraY, CONFIG.cameraZ);
