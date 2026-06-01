@@ -2498,9 +2498,12 @@ function updatePttBtn(viewportW) {
     if (iconEl) iconEl.style.opacity = '0';
     if (fallEl) fallEl.style.opacity = '0';
   } else if (mode === 'recording') {
-    // Attivamente in ascolto PTT: sfondo colore tema, stessa opacità dell'icona principale
-    btn.style.background  = 'color-mix(in srgb, var(--accent) 15%, transparent)';
-    btn.style.borderColor = 'color-mix(in srgb, var(--accent) 50%, transparent)';
+    // Attivamente in ascolto PTT: sfondo colore tema con stessa opacità dell'icona principale
+    const _idleBg  = CONFIG.pttBgColor  || CONFIG.micBgColor  || 'rgba(34,211,160,.15)';
+    const _idleBrd = CONFIG.pttBorderColor || CONFIG.micBorderColor || 'rgba(34,211,160,.5)';
+    const _alphaOf = c => { const m = c.match(/[\d.]+\)$/); return m ? Math.round(parseFloat(m[0]) * 100) : 15; };
+    btn.style.background  = `color-mix(in srgb, var(--accent) ${_alphaOf(_idleBg)}%, transparent)`;
+    btn.style.borderColor = `color-mix(in srgb, var(--accent) ${_alphaOf(_idleBrd)}%, transparent)`;
     if (waveEl) waveEl.style.display = 'flex';
     if (iconEl) iconEl.style.opacity = '0';
     if (fallEl) fallEl.style.opacity = '0';
