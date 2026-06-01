@@ -54,7 +54,7 @@ db.exec(`
     idle_disabled     INTEGER DEFAULT 0,
     idle_timeout      INTEGER DEFAULT 90,
     idle_icon         TEXT DEFAULT '🤖',
-    idle_icon_img     TEXT DEFAULT 'icons/26b878dc_idle_icon_img.png',
+    idle_icon_img     TEXT DEFAULT '',
     idle_title        TEXT DEFAULT '',
     idle_subtitle     TEXT DEFAULT 'La tua assistente virtuale',
     idle_hint         TEXT DEFAULT '✨ Tocca per iniziare',
@@ -76,21 +76,21 @@ db.exec(`
     chat_font         TEXT DEFAULT '',
     chat_font_size    REAL DEFAULT 1.1,
     show_controls     INTEGER DEFAULT 1,
-    mic_icon          TEXT DEFAULT 'icons/26b878dc_mic_icon.png',
+    mic_icon          TEXT DEFAULT '',
     mic_icon_size     INTEGER DEFAULT 100,
     mic_icon_x        INTEGER DEFAULT 0,
     mic_icon_y        INTEGER DEFAULT 0,
-    mic_icon_disabled TEXT DEFAULT 'icons/26b878dc_mic_icon_disabled.png',
+    mic_icon_disabled TEXT DEFAULT '',
     mic_visible       INTEGER DEFAULT 1,
     mic_bg_color      TEXT DEFAULT 'rgba(248,113,113,0.15)',
     mic_disabled_color TEXT DEFAULT 'rgba(248,113,113,0.15)',
     mic_border_color  TEXT DEFAULT 'rgba(34,211,160,0.5)',
     mic_border_disabled_color TEXT DEFAULT 'rgba(248,113,113,0.4)',
-    audio_icon        TEXT DEFAULT 'icons/26b878dc_audio_icon.png',
+    audio_icon        TEXT DEFAULT '',
     audio_icon_size   INTEGER DEFAULT 100,
     audio_icon_x      INTEGER DEFAULT 0,
     audio_icon_y      INTEGER DEFAULT 0,
-    audio_icon_disabled TEXT DEFAULT 'icons/26b878dc_audio_icon_disabled.png',
+    audio_icon_disabled TEXT DEFAULT '',
     audio_visible     INTEGER DEFAULT 1,
     audio_bg_color    TEXT DEFAULT 'rgba(34,211,160,0.15)',
     audio_disabled_color TEXT DEFAULT 'rgba(34,211,160,0.15)',
@@ -239,8 +239,7 @@ if (!existing.includes('touch_stop_speaking'))
 if (!existing.includes('ptt_enabled'))
   db.exec("ALTER TABLE avatars ADD COLUMN ptt_enabled INTEGER DEFAULT 0");
 if (!existing.includes('ptt_icon'))
-  db.exec("ALTER TABLE avatars ADD COLUMN ptt_icon TEXT DEFAULT 'icons/26b878dc_mic_icon.png'");
-db.exec("UPDATE avatars SET ptt_icon = 'icons/26b878dc_mic_icon.png' WHERE ptt_icon = '' OR ptt_icon IS NULL");
+  db.exec("ALTER TABLE avatars ADD COLUMN ptt_icon TEXT DEFAULT ''");
 if (!existing.includes('ptt_icon_size'))
   db.exec("ALTER TABLE avatars ADD COLUMN ptt_icon_size INTEGER DEFAULT 80");
 if (!existing.includes('ptt_icon_x'))
