@@ -1534,6 +1534,22 @@ app.post('/api/chat', async (req, res) => {
       function: { name: 'search_web', description: TAVILY_TOOL_DEF_CLAUDE[0]?.description || '', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
     }] : [];
 
+    // ── Modalità MCP diretta: nessun AI intermedio, passa direttamente al tool chat ──
+    if (avatar?.avatar_mode === 'mcp' && mcpUrl) {
+      try {
+        const chatTool = mcpTools.find(t => t.name === 'chat');
+        if (!chatTool) throw new Error('Tool "chat" non trovato nel server MCP');
+        const result = await callMcpTool('chat', { message });
+        const text = typeof result === 'string' ? result
+          : result?.content?.[0]?.text ?? result?.text ?? JSON.stringify(result);
+        history.push({ role: 'assistant', content: text });
+        return res.json({ reply: text, sessionId: sid });
+      } catch (e) {
+        console.warn('[MCP-DIRECT] errore:', e.message);
+        return res.json({ reply: `Errore MCP: ${e.message}`, sessionId: sid });
+      }
+    }
+
     let reply;
     let chatTokensIn = 0, chatTokensOut = 0;
 
