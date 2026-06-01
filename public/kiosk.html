@@ -1814,7 +1814,7 @@ function _updateMicBtnMode(mode) {
     const brd = CONFIG.micBorderColor || 'rgba(34,211,160,.5)';
     btn.style.background  = `color-mix(in srgb, var(--accent) ${_alphaOf(bg)}%, transparent)`;
     btn.style.borderColor = `color-mix(in srgb, var(--accent) ${_alphaOf(brd)}%, transparent)`;
-  } else if (mode !== 'recording') {
+  } else if (mode !== 'recording' && mode !== 'listening') {
     // Tutti gli altri stati tranne recording (che è gestito da setMicWaveVisible):
     // ripristina colori configurati
     if (CONFIG.micEnabled) {
@@ -1830,7 +1830,7 @@ function _updateMicBtnMode(mode) {
 function setMode(mode) {
   state.mode = mode;
 
-  setMicWaveVisible(CONFIG.micEnabled && mode === 'recording');
+  setMicWaveVisible(CONFIG.micEnabled && (mode === 'recording' || mode === 'listening'));
   setAudioWaveVisible(CONFIG.audioEnabled && mode === 'speaking');
   if (CONFIG.pttEnabled) { updatePttBtn(); }
   _updateMicBtnMode(mode);
