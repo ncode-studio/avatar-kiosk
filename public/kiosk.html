@@ -2504,16 +2504,24 @@ function updatePttBtn(viewportW) {
     const _alphaOf = c => { const m = c.match(/[\d.]+\)$/); return m ? Math.round(parseFloat(m[0]) * 100) : 15; };
     btn.style.background  = `color-mix(in srgb, var(--accent) ${_alphaOf(_idleBg)}%, transparent)`;
     btn.style.borderColor = `color-mix(in srgb, var(--accent) ${_alphaOf(_idleBrd)}%, transparent)`;
-    if (waveEl) waveEl.style.display = 'none';
-    if (iconEl) iconEl.style.opacity = '';
-    if (fallEl) fallEl.style.opacity = '';
-    const ico = CONFIG.pttIcon || CONFIG.micIcon;
-    if (ico) {
-      if (iconEl) { iconEl.src = `/${ico}?t=${ts}`; iconEl.style.setProperty('width', icoSz, 'important'); iconEl.style.setProperty('height', icoSz, 'important'); iconEl.style.display = 'block'; iconEl.style.filter = 'none'; }
-      if (fallEl) fallEl.style.display = 'none';
+    if (_pttVoiceActive) {
+      // Voce rilevata: mostra waveform
+      if (waveEl) waveEl.style.display = 'flex';
+      if (iconEl) iconEl.style.opacity = '0';
+      if (fallEl) fallEl.style.opacity = '0';
     } else {
-      if (iconEl) iconEl.style.display = 'none';
-      if (fallEl) { fallEl.textContent = '🎙'; fallEl.style.setProperty('font-size', icoSz, 'important'); fallEl.style.display = ''; }
+      // In attesa di voce: icona base
+      if (waveEl) waveEl.style.display = 'none';
+      if (iconEl) iconEl.style.opacity = '';
+      if (fallEl) fallEl.style.opacity = '';
+      const ico = CONFIG.pttIcon || CONFIG.micIcon;
+      if (ico) {
+        if (iconEl) { iconEl.src = `/${ico}?t=${ts}`; iconEl.style.setProperty('width', icoSz, 'important'); iconEl.style.setProperty('height', icoSz, 'important'); iconEl.style.display = 'block'; iconEl.style.filter = 'none'; }
+        if (fallEl) fallEl.style.display = 'none';
+      } else {
+        if (iconEl) iconEl.style.display = 'none';
+        if (fallEl) { fallEl.textContent = '🎙'; fallEl.style.setProperty('font-size', icoSz, 'important'); fallEl.style.display = ''; }
+      }
     }
   } else {
     // Idle / thinking: colori normali, icona
@@ -2540,6 +2548,7 @@ let _pttFinalText = '';
 let _pttInterimText = '';
 let _pttStartedAt = 0;
 let _pttStopPending = false; // pointerup arrivato prima che _pttStart finisse
+let _pttVoiceActive = false; // voce rilevata dalla SpeechRecognition
 
 async function _pttStart() {
   _pttStopPending = false;
@@ -2579,6 +2588,7 @@ async function _pttStart() {
   _pttFinalText = '';
   _pttInterimText = '';
   _pttStartedAt = Date.now();
+  _pttVoiceActive = false;
 
   const rec = new SR();
   rec.continuous = true;
@@ -2594,6 +2604,8 @@ async function _pttStart() {
     }
     if (final) { _pttFinalText += final; _pttInterimText = ''; }
     else if (interim) _pttInterimText = interim;
+    // Mostra waveform al primo segnale vocale
+    if (!_pttVoiceActive) { _pttVoiceActive = true; updatePttBtn(); }
   };
 
   rec.onerror = e => {
@@ -2610,6 +2622,7 @@ async function _pttStart() {
 
 function _pttStop() {
   _pttStopPending = false;
+  _pttVoiceActive = false;
   const btn = document.getElementById('ptt-btn');
   if (btn) { btn.classList.remove('ptt-pressing'); btn.style.transform = (window.innerWidth <= 600 ? 'translateX(-50%)' : ''); updatePttBtn(); }
   if (!_pttRecognition) { _pttStopPending = true; return; } // start non ancora completato
