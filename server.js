@@ -1534,23 +1534,7 @@ app.post('/api/chat', async (req, res) => {
       function: { name: 'search_web', description: TAVILY_TOOL_DEF_CLAUDE[0]?.description || '', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
     }] : [];
 
-    // ── Modalità MCP: diretta (no filtro) o via AI Agent (con filtro tool) ────
-    if (avatar?.avatar_mode === 'mcp' && mcpUrl && mcpFilter.length === 0) {
-      // Nessun filtro: passa direttamente al tool chat del server MCP
-      try {
-        const chatTool = mcpTools.find(t => t.name === 'chat');
-        if (!chatTool) throw new Error('Tool "chat" non trovato nel server MCP');
-        const result = await callMcpTool('chat', { message });
-        const text = typeof result === 'string' ? result
-          : result?.content?.[0]?.text ?? result?.text ?? JSON.stringify(result);
-        history.push({ role: 'assistant', content: text });
-        return res.json({ reply: text, sessionId: sid });
-      } catch (e) {
-        console.warn('[MCP-DIRECT] errore:', e.message);
-        return res.json({ reply: `Errore MCP: ${e.message}`, sessionId: sid });
-      }
-    }
-    // Con filtro tool: l'AI Agent configurato chiama solo i tool filtrati (continua sotto)
+    // Modalità MCP: l'AI Agent usa tutti i tool (no filtro) o solo quelli filtrati
 
     let reply;
     let chatTokensIn = 0, chatTokensOut = 0;
