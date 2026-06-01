@@ -2498,9 +2498,9 @@ function updatePttBtn(viewportW) {
     if (iconEl) iconEl.style.opacity = '0';
     if (fallEl) fallEl.style.opacity = '0';
   } else if (mode === 'recording') {
-    // Attivamente in ascolto PTT: sfondo colore tema + waveform
-    btn.style.background  = 'color-mix(in srgb, var(--accent) 25%, transparent)';
-    btn.style.borderColor = 'color-mix(in srgb, var(--accent) 60%, transparent)';
+    // Attivamente in ascolto PTT: sfondo colore tema, stessa opacità dell'icona principale
+    btn.style.background  = 'color-mix(in srgb, var(--accent) 15%, transparent)';
+    btn.style.borderColor = 'color-mix(in srgb, var(--accent) 50%, transparent)';
     if (waveEl) waveEl.style.display = 'flex';
     if (iconEl) iconEl.style.opacity = '0';
     if (fallEl) fallEl.style.opacity = '0';
