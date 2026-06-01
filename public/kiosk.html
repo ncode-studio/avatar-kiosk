@@ -2551,7 +2551,7 @@ function updatePttBtn(viewportW) {
     // PTT premuto: colore tema + icona (waveform solo se voce rilevata)
     btn.style.background  = _themeColor(CONFIG.pttBgColor  || CONFIG.micBgColor,  'rgba(34,211,160,.15)');
     btn.style.borderColor = _themeColor(CONFIG.pttBorderColor || CONFIG.micBorderColor, 'rgba(34,211,160,.5)');
-    if (_pttVoiceActive) { _showWave(); } else { _showIcon(); }
+    if (_pttVoiceActive || state.wakeActivated) { _showWave(); } else { _showIcon(); }
   } else {
     // Idle / thinking: colori normali, icona
     btn.style.background  = CONFIG.pttBgColor || CONFIG.micBgColor || 'rgba(34,211,160,.15)';
