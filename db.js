@@ -321,6 +321,23 @@ if (!existing.includes('tavily_api_key'))
   db.exec("ALTER TABLE avatars ADD COLUMN tavily_api_key TEXT DEFAULT ''")
 if (!existing.includes('tavily_enabled'))
   db.exec("ALTER TABLE avatars ADD COLUMN tavily_enabled INTEGER DEFAULT 0")
+// Azione all'avvio: chiama un tool MCP o una API HTTP e usa il risultato come frase di presentazione
+if (!existing.includes('startup_action'))
+  db.exec("ALTER TABLE avatars ADD COLUMN startup_action TEXT DEFAULT 'none'")        // none | mcp | api
+if (!existing.includes('startup_mcp_tool'))
+  db.exec("ALTER TABLE avatars ADD COLUMN startup_mcp_tool TEXT DEFAULT ''")
+if (!existing.includes('startup_mcp_args'))
+  db.exec("ALTER TABLE avatars ADD COLUMN startup_mcp_args TEXT DEFAULT '{}'")
+if (!existing.includes('startup_api_url'))
+  db.exec("ALTER TABLE avatars ADD COLUMN startup_api_url TEXT DEFAULT ''")
+if (!existing.includes('startup_api_method'))
+  db.exec("ALTER TABLE avatars ADD COLUMN startup_api_method TEXT DEFAULT 'GET'")
+if (!existing.includes('startup_api_headers'))
+  db.exec("ALTER TABLE avatars ADD COLUMN startup_api_headers TEXT DEFAULT '{}'")
+if (!existing.includes('startup_api_body'))
+  db.exec("ALTER TABLE avatars ADD COLUMN startup_api_body TEXT DEFAULT ''")
+if (!existing.includes('startup_api_output_field'))
+  db.exec("ALTER TABLE avatars ADD COLUMN startup_api_output_field TEXT DEFAULT ''")
 
 // Tabella log richieste
 db.exec(`

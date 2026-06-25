@@ -1668,6 +1668,68 @@
               oninput="sendToPreview({type:'avatarParam',key:'greeting_text',value:this.value})"/>
             <div class="field-hint" style="margin-top:4px;font-size:11px;color:#888">Lascia vuoto per usare la frase predefinita.</div>
           </div>
+
+          <!-- Azione all'avvio: genera la presentazione da un tool MCP o una API -->
+          <div class="field" style="margin-top:8px">
+            <label>Presentazione dinamica all'avvio</label>
+            <select id="f-startup-action" style="width:100%" onchange="updateStartupFields()">
+              <option value="none">Nessuna — usa la frase di benvenuto statica</option>
+              <option value="mcp">Chiama un tool MCP</option>
+              <option value="api">Chiama una API HTTP</option>
+            </select>
+            <div class="field-hint" style="margin-top:4px;font-size:11px;color:#888">
+              Se attiva, all'avvio l'avatar chiama la sorgente scelta e usa la risposta come frase di presentazione (al posto di quella statica).
+            </div>
+          </div>
+
+          <!-- Campi MCP -->
+          <div id="startup-mcp-fields" style="display:none;flex-direction:column;gap:12px;margin-top:4px">
+            <div class="webhook-block-hint" style="color:#888">Usa l'URL e gli header del MCP server configurati nella sezione <b>Modalità AI → MCP</b>.</div>
+            <div class="field">
+              <label>Nome tool MCP</label>
+              <input type="text" id="f-startup-mcp-tool" class="mono-input" placeholder="es. get_welcome_message"/>
+            </div>
+            <div class="webhook-block">
+              <div class="webhook-block-title">Parametri (JSON) <button class="btn-json-fmt" onclick="autoFormatJSON(document.getElementById('f-startup-mcp-args'))">{ } Format</button></div>
+              <textarea id="f-startup-mcp-args" rows="3" class="mono-area" placeholder='{"lang":"it"}' onblur="autoFormatJSON(this)">{}</textarea>
+            </div>
+          </div>
+
+          <!-- Campi API HTTP -->
+          <div id="startup-api-fields" style="display:none;flex-direction:column;gap:12px;margin-top:4px">
+            <div class="field">
+              <label>URL endpoint</label>
+              <input type="text" id="f-startup-api-url" class="mono-input" placeholder="https://api.esempio.com/welcome"/>
+            </div>
+            <div class="field">
+              <label>Metodo</label>
+              <select id="f-startup-api-method" style="width:100%">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+              </select>
+            </div>
+            <div class="webhook-block">
+              <div class="webhook-block-title">Headers <button class="btn-json-fmt" onclick="autoFormatJSON(document.getElementById('f-startup-api-headers'))">{ } Format</button></div>
+              <textarea id="f-startup-api-headers" rows="2" class="mono-area" placeholder='{"Authorization":"Bearer xxx"}' onblur="autoFormatJSON(this)">{}</textarea>
+            </div>
+            <div class="webhook-block">
+              <div class="webhook-block-title">Body (JSON, solo POST/PUT) <button class="btn-json-fmt" onclick="autoFormatJSON(document.getElementById('f-startup-api-body'))">{ } Format</button></div>
+              <textarea id="f-startup-api-body" rows="3" class="mono-area" placeholder='{"action":"welcome"}' onblur="autoFormatJSON(this)"></textarea>
+            </div>
+            <div class="webhook-block">
+              <div class="webhook-block-title">Campo risposta</div>
+              <input type="text" id="f-startup-api-output-field" class="mono-input" placeholder="es. response oppure data.message"/>
+              <div class="webhook-block-hint">Campo JSON da cui estrarre il testo (usa il punto per annidare). Vuoto = usa l'intera risposta o i campi comuni (text/response/message).</div>
+            </div>
+          </div>
+
+          <!-- Test azione all'avvio -->
+          <div id="startup-test-wrap" style="display:none;margin-top:4px">
+            <button class="btn btn-neutral" onclick="testStartup()"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Testa presentazione</button>
+            <div id="startup-test-result" style="font-size:.78rem;color:var(--text-dim);margin-top:6px"></div>
+          </div>
+
           <!-- Sfondo -->
           <div class="subsection">
             <div class="subsection-title">Sfondo</div>
@@ -2381,6 +2443,15 @@ function selectAvatar(id) {
   document.getElementById('f-wake-words').value          = a.wake_words || '';
   sendToPreview({type:'avatarParam', key:'wake_words', value: a.wake_words || ''});
   document.getElementById('f-greeting-text').value       = a.greeting_text || '';
+  document.getElementById('f-startup-action').value          = a.startup_action          || 'none';
+  document.getElementById('f-startup-mcp-tool').value        = a.startup_mcp_tool        || '';
+  document.getElementById('f-startup-mcp-args').value        = a.startup_mcp_args        || '{}';
+  document.getElementById('f-startup-api-url').value         = a.startup_api_url         || '';
+  document.getElementById('f-startup-api-method').value      = a.startup_api_method      || 'GET';
+  document.getElementById('f-startup-api-headers').value     = a.startup_api_headers     || '{}';
+  document.getElementById('f-startup-api-body').value        = a.startup_api_body        || '';
+  document.getElementById('f-startup-api-output-field').value = a.startup_api_output_field || '';
+  updateStartupFields();
   setVadSlider('vad-threshold',  a.vad_threshold           ?? 0.012, v => parseFloat(v).toFixed(3));
   setVadSlider('vad-silence',    a.vad_silence_duration    ?? 1300);
   setVadSlider('vad-min-speech', a.vad_min_speech_duration ?? 150);
@@ -2894,6 +2965,14 @@ async function saveAvatar() {
     wake_word_always:   document.getElementById('f-wake-word-always').checked  ? 1 : 0,
     wake_words:         document.getElementById('f-wake-words').value.trim(),
     greeting_text:      document.getElementById('f-greeting-text').value,
+    startup_action:           document.getElementById('f-startup-action').value,
+    startup_mcp_tool:         document.getElementById('f-startup-mcp-tool').value.trim(),
+    startup_mcp_args:         document.getElementById('f-startup-mcp-args').value.trim() || '{}',
+    startup_api_url:          document.getElementById('f-startup-api-url').value.trim(),
+    startup_api_method:       document.getElementById('f-startup-api-method').value,
+    startup_api_headers:      document.getElementById('f-startup-api-headers').value.trim() || '{}',
+    startup_api_body:         document.getElementById('f-startup-api-body').value.trim(),
+    startup_api_output_field: document.getElementById('f-startup-api-output-field').value.trim(),
     vad_threshold:           parseFloat(document.getElementById('s-vad-threshold').value),
     vad_silence_duration:    parseInt(document.getElementById('s-vad-silence').value),
     vad_min_speech_duration: parseInt(document.getElementById('s-vad-min-speech').value),
@@ -3599,6 +3678,40 @@ async function testMcp() {
     const tools = Array.isArray(res.tools) ? res.tools : [];
     const names = tools.map(t => t.name).join(', ') || '(nessun tool)';
     result.textContent = `✓ Connesso — ${tools.length} tool disponibili: ${names}`;
+  } catch (e) {
+    result.style.color = 'var(--error)';
+    result.textContent = e.message;
+  }
+}
+
+// Mostra/nasconde i campi dell'azione all'avvio in base al tipo scelto
+function updateStartupFields() {
+  const action = document.getElementById('f-startup-action').value;
+  document.getElementById('startup-mcp-fields').style.display  = action === 'mcp' ? 'flex' : 'none';
+  document.getElementById('startup-api-fields').style.display  = action === 'api' ? 'flex' : 'none';
+  document.getElementById('startup-test-wrap').style.display   = action === 'none' ? 'none' : 'block';
+}
+
+async function testStartup() {
+  const result = document.getElementById('startup-test-result');
+  const body = {
+    startup_action:           document.getElementById('f-startup-action').value,
+    mcp_url:                  document.getElementById('f-mcp-url').value.trim(),
+    mcp_headers:              document.getElementById('f-mcp-headers').value.trim() || '{}',
+    startup_mcp_tool:         document.getElementById('f-startup-mcp-tool').value.trim(),
+    startup_mcp_args:         document.getElementById('f-startup-mcp-args').value.trim() || '{}',
+    startup_api_url:          document.getElementById('f-startup-api-url').value.trim(),
+    startup_api_method:       document.getElementById('f-startup-api-method').value,
+    startup_api_headers:      document.getElementById('f-startup-api-headers').value.trim() || '{}',
+    startup_api_body:         document.getElementById('f-startup-api-body').value.trim(),
+    startup_api_output_field: document.getElementById('f-startup-api-output-field').value.trim(),
+  };
+  result.style.color = 'var(--text-dim)';
+  result.textContent = 'Chiamata in corso...';
+  try {
+    const res = await api.post('/api/admin/startup-test', body);
+    result.style.color = 'var(--success)';
+    result.textContent = res.text ? `✓ Presentazione: "${res.text}"` : '✓ Risposta vuota';
   } catch (e) {
     result.style.color = 'var(--error)';
     result.textContent = e.message;

@@ -919,6 +919,7 @@ const CONFIG = {
   audioIconY:   0,
   avatarName:   'Sofia',
   greetingText: '',
+  startupAction: 'none',
   wakeWordEnabled: false,
   wakeWordAlwaysRequired: false,
   wakeWords: '',
@@ -2790,6 +2791,20 @@ function setControlsVisible(visible) {
   document.body.classList.toggle('idle-hidden', !visible);
 }
 
+// Risolve il testo della presentazione: statico oppure dinamico (azione all'avvio MCP/API)
+async function resolveGreetingText() {
+  let text = CONFIG.greetingText;
+  if (CONFIG.startupAction && CONFIG.startupAction !== 'none') {
+    try {
+      const r = await fetch(`${CONFIG.serverUrl}/api/avatar/${CONFIG.avatarId}/startup-greeting`, { method: 'POST' });
+      if (r.ok) { const d = await r.json(); if (d.text) text = d.text; }
+    } catch (_) {}
+  }
+  return (text || '')
+    .replace(/\{\{nome\}\}/gi, CONFIG.avatarName)
+    .replace(/\{\{sessionID\}\}/gi, state.kioskSessionId);
+}
+
 async function wakeUp(forceGreeting = false) {
   // forceGreeting: idle disabilitato → l'overlay è già nascosto in initAvatar,
   // ma la frase di presentazione deve comunque essere pronunciata
@@ -2816,12 +2831,14 @@ async function wakeUp(forceGreeting = false) {
     else state.vad.resume();
   }
 
-  if (comingFromIdle && CONFIG.greetingText.trim() && CONFIG.audioEnabled) {
+  // Risolve la frase di presentazione: se è configurata un'azione all'avvio
+  // (tool MCP o API HTTP), il testo viene generato dinamicamente dal server.
+  const hasGreeting = CONFIG.greetingText.trim() || CONFIG.startupAction !== 'none';
+  const greetingText = (comingFromIdle && hasGreeting) ? await resolveGreetingText() : '';
+
+  if (greetingText && CONFIG.audioEnabled) {
     // Casi 4,5,6: presentazione TTS — ferma recognition per evitare self-listening
     stopWakeWord();
-    const greetingText = CONFIG.greetingText
-      .replace(/\{\{nome\}\}/gi, CONFIG.avatarName)
-      .replace(/\{\{sessionID\}\}/gi, state.kioskSessionId);
     addToHistory('avatar', greetingText);
     setMode('speaking');
     state.vad?.pause();
@@ -2840,11 +2857,8 @@ async function wakeUp(forceGreeting = false) {
     stopProceduralLipSync(); anim.lipTarget = 0;
     state.vad?.resume();
     setMode('listening');
-  } else if (comingFromIdle && CONFIG.greetingText.trim()) {
+  } else if (greetingText) {
     // audioEnabled=false: solo testo
-    const greetingText = CONFIG.greetingText
-      .replace(/\{\{nome\}\}/gi, CONFIG.avatarName)
-      .replace(/\{\{sessionID\}\}/gi, state.kioskSessionId);
     setTimeout(() => addToHistory('avatar', greetingText), 50);
   }
   // Casi 1,2,3 (idleDisabled=true, comingFromIdle=false): nessuna presentazione, chat subito attiva
@@ -3783,6 +3797,7 @@ async function initAvatar() {
     CONFIG.avatarId      = AVATAR_ID;
     CONFIG.avatarName    = cfg.name;
     CONFIG.greetingText         = cfg.greeting_text           || '';
+    CONFIG.startupAction        = cfg.startup_action          || 'none';
     CONFIG.vadThreshold         = cfg.vad_threshold           ?? 0.012;
     CONFIG.vadSilenceDuration   = cfg.vad_silence_duration    ?? 1300;
     CONFIG.vadMinSpeechDuration = cfg.vad_min_speech_duration ?? 150;

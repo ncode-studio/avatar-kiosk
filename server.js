@@ -185,7 +185,7 @@ app.get('/api/avatar/:id', (req, res) => {
           mic_bubble_visible, mic_bubble_text, mic_bubble_position, mic_bubble_x, mic_bubble_y,
           mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
           mic_bubble_bg_image, mic_bubble_width, mic_bubble_height,
-          touch_stop_speaking,
+          touch_stop_speaking, startup_action,
           ptt_enabled, ptt_icon, ptt_icon_size, ptt_icon_x, ptt_icon_y, ptt_bg_color, ptt_border_color } = avatar;
   res.json({ id, name, background, bg_video, model_file, idle_start, idle_end,
              speech_start, speech_end, anim_pingpong, tts_text_normalization, tts_language_normalization, avatar_scale, avatar_offset_x,
@@ -200,7 +200,7 @@ app.get('/api/avatar/:id', (req, res) => {
              vad_threshold, vad_silence_duration, vad_min_speech_duration, vad_min_blob_size, vad_wake_timeout,
              mic_bubble_visible, mic_bubble_text, mic_bubble_x, mic_bubble_y,
              mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
-             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height, touch_stop_speaking,
+             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height, touch_stop_speaking, startup_action,
              ptt_enabled, ptt_icon, ptt_icon_size, ptt_icon_x, ptt_icon_y, ptt_bg_color, ptt_border_color });
 });
 
@@ -235,7 +235,7 @@ app.get('/api/preview/:id', (req, res) => {
           mic_bubble_visible, mic_bubble_text, mic_bubble_position, mic_bubble_x, mic_bubble_y,
           mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
           mic_bubble_bg_image, mic_bubble_width, mic_bubble_height,
-          touch_stop_speaking,
+          touch_stop_speaking, startup_action,
           ptt_enabled, ptt_icon, ptt_icon_size, ptt_icon_x, ptt_icon_y, ptt_bg_color, ptt_border_color } = avatar;
   res.json({ id, name, background, bg_video, model_file, idle_start, idle_end,
              speech_start, speech_end, anim_pingpong, tts_text_normalization, tts_language_normalization, avatar_scale, avatar_offset_x,
@@ -250,7 +250,7 @@ app.get('/api/preview/:id', (req, res) => {
              vad_threshold, vad_silence_duration, vad_min_speech_duration, vad_min_blob_size, vad_wake_timeout,
              mic_bubble_visible, mic_bubble_text, mic_bubble_x, mic_bubble_y,
              mic_bubble_font, mic_bubble_font_size, mic_bubble_bg_color, mic_bubble_border_color, mic_bubble_border_radius,
-             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height, touch_stop_speaking,
+             mic_bubble_bg_image, mic_bubble_width, mic_bubble_height, touch_stop_speaking, startup_action,
              ptt_enabled, ptt_icon, ptt_icon_size, ptt_icon_x, ptt_icon_y, ptt_bg_color, ptt_border_color });
 });
 
@@ -359,6 +359,7 @@ app.put('/api/admin/avatars/:id', (req, res) => {
                   'vad_threshold','vad_silence_duration','vad_min_speech_duration','vad_min_blob_size','vad_wake_timeout',
                   'vad_noise_mult','stt_prompt',
                   'mcp_url','mcp_headers','mcp_tool_filter','tavily_api_key','tavily_enabled',
+                  'startup_action','startup_mcp_tool','startup_mcp_args','startup_api_url','startup_api_method','startup_api_headers','startup_api_body','startup_api_output_field',
                   'mic_bubble_visible','mic_bubble_text','mic_bubble_x','mic_bubble_y',
                   'mic_bubble_font','mic_bubble_font_size','mic_bubble_bg_color','mic_bubble_border_color','mic_bubble_border_radius','mic_bubble_bg_image','mic_bubble_width','mic_bubble_height',
                   'rate_limit_rpm',
@@ -1225,6 +1226,77 @@ async function mcpOpenSession(url, headers) {
     },
   };
 }
+
+// ─── Azione all'avvio: chiama un tool MCP o una API HTTP e restituisce il testo ──
+// cfg può essere un record avatar dal DB oppure i valori grezzi dal form admin.
+async function runStartupAction(cfg) {
+  const action = cfg.startup_action || 'none';
+  const parseJson = (v, fallback) => {
+    if (v && typeof v === 'object') return v;
+    try { return JSON.parse(v || JSON.stringify(fallback)); } catch { return fallback; }
+  };
+
+  if (action === 'mcp') {
+    const url = (cfg.mcp_url || '').trim();
+    if (!url) throw new Error('MCP URL non configurato (modalità AI MCP)');
+    if (!cfg.startup_mcp_tool) throw new Error('Nome tool MCP mancante');
+    const headers = parseJson(cfg.mcp_headers, {});
+    const args    = parseJson(cfg.startup_mcp_args, {});
+    const result  = await mcpCallTool(url, headers, cfg.startup_mcp_tool, args);
+    return (result || '').toString().trim();
+  }
+
+  if (action === 'api') {
+    const url = (cfg.startup_api_url || '').trim();
+    if (!url) throw new Error('API URL non configurato');
+    const headers = parseJson(cfg.startup_api_headers, {});
+    const method  = (cfg.startup_api_method || 'GET').toUpperCase();
+    const opts    = { method, headers: { ...headers } };
+    if (method !== 'GET' && method !== 'HEAD' && (cfg.startup_api_body || '').trim()) {
+      opts.body = cfg.startup_api_body;
+      if (!Object.keys(headers).some(h => h.toLowerCase() === 'content-type'))
+        opts.headers['Content-Type'] = 'application/json';
+    }
+    const r   = await fetch(url, opts);
+    const raw = await r.text();
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${raw.slice(0, 200)}`);
+    const field = (cfg.startup_api_output_field || '').trim();
+    if (field) {
+      let data; try { data = JSON.parse(raw); } catch { return raw.trim(); }
+      return String(getNestedField(data, field) ?? '').trim();
+    }
+    // Nessun campo specificato: prova i nomi comuni, altrimenti testo grezzo
+    try {
+      const d = JSON.parse(raw);
+      return (typeof d === 'string' ? d : (d.text || d.response || d.message || raw)).toString().trim();
+    } catch { return raw.trim(); }
+  }
+
+  return '';
+}
+
+// ─── Route: frase di presentazione dinamica (chiamata dal kiosk all'avvio) ─────
+app.post('/api/avatar/:id/startup-greeting', async (req, res) => {
+  const avatar = db.prepare('SELECT * FROM avatars WHERE id = ?').get(req.params.id);
+  if (!avatar) return res.status(404).json({ error: 'Non trovato' });
+  try {
+    const text = await runStartupAction(avatar);
+    res.json({ text });
+  } catch (e) {
+    console.warn('[STARTUP] azione fallita:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Route: Test azione all'avvio (backoffice, usa i valori del form) ──────────
+app.post('/api/admin/startup-test', requireAdmin, async (req, res) => {
+  try {
+    const text = await runStartupAction(req.body || {});
+    res.json({ text });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ─── Route: Test connessione MCP ──────────────────────────────────────────────
 app.post('/api/admin/mcp-test', requireAdmin, async (req, res) => {
