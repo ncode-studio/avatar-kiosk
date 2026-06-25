@@ -1140,6 +1140,13 @@ async function mcpCallTool(url, headers, name, args) {
     return JSON.stringify(result);
   }
 
+  if (transport === 'streamable') {
+    // Streamable HTTP (anche stateless, es. pip-chat): usa la sessione che
+    // invia l'Accept corretto e parsa le risposte SSE.
+    const session = await mcpOpenSession(url, headers);
+    return session.callTool(name, args);
+  }
+
   // JSON-RPC diretto — initialize (con session), poi tools/call
   const postJson = async (body, extraHeaders = {}) => {
     const r = await fetch(url, {
