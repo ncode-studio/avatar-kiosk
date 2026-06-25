@@ -995,7 +995,10 @@ async function mcpDetectTransport(url, headers) {
       }}),
       signal: AbortSignal.timeout(5000),
     });
-    if (r.ok && r.headers.get('mcp-session-id')) return 'streamable';
+    // Streamable HTTP: il server può essere stateful (header mcp-session-id)
+    // oppure stateless (risponde in SSE senza session-id, es. pip-chat).
+    const ct = r.headers.get('content-type') || '';
+    if (r.ok && (r.headers.get('mcp-session-id') || ct.includes('text/event-stream'))) return 'streamable';
   } catch {}
   return 'jsonrpc';
 }
