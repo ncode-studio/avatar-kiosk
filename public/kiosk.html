@@ -2790,8 +2790,10 @@ function setControlsVisible(visible) {
   document.body.classList.toggle('idle-hidden', !visible);
 }
 
-async function wakeUp() {
-  const comingFromIdle = !document.getElementById('idle-overlay').classList.contains('hidden');
+async function wakeUp(forceGreeting = false) {
+  // forceGreeting: idle disabilitato → l'overlay è già nascosto in initAvatar,
+  // ma la frase di presentazione deve comunque essere pronunciata
+  const comingFromIdle = forceGreeting || !document.getElementById('idle-overlay').classList.contains('hidden');
 
   stopWakeWord();
   document.getElementById('idle-overlay').classList.add('hidden');
@@ -3930,7 +3932,7 @@ async function initAvatar() {
       document.getElementById('idle-overlay').classList.add('hidden');
       setControlsVisible(true);
       let _wakeUpDone = false;
-      const _doWakeUp = () => { if (!_wakeUpDone) { _wakeUpDone = true; wakeUp(); } };
+      const _doWakeUp = () => { if (!_wakeUpDone) { _wakeUpDone = true; wakeUp(true); } };
       setTimeout(_doWakeUp, 600);
       document.addEventListener('click', _doWakeUp, { once: true });
     } else if (CONFIG.wakeWordEnabled) {
