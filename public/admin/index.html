@@ -996,6 +996,18 @@
             </div>
           </div>
 
+          <div class="webhook-block">
+            <label class="check-line">
+              <input type="checkbox" id="f-mcp-skip-rewrite"
+                onchange="sendToPreview({type:'avatarParam',key:'mcp_skip_rewrite',value:this.checked?1:0})"/>
+              <span>Salta rielaborazione LLM finale (usa output tool come risposta)</span>
+            </label>
+            <div class="webhook-block-hint">
+              Se attivo, l'output del tool MCP viene inviato direttamente all'utente senza reinviarlo a Claude/OpenAI.
+              Riduce latenza e costi, ma la risposta non verrà riformulata nello stile dell'avatar.
+            </div>
+          </div>
+
           <button class="btn btn-neutral" onclick="testMcp()"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Testa connessione MCP</button>
           <div id="mcp-test-result" style="font-size:.78rem;color:var(--text-dim)"></div>
         </div>
@@ -2240,6 +2252,7 @@ function selectAvatar(id) {
   document.getElementById('f-mcp-url').value          = a.mcp_url          || '';
   document.getElementById('f-mcp-headers').value      = a.mcp_headers      || '{}';
   document.getElementById('f-mcp-tool-filter').value  = a.mcp_tool_filter  || '';
+  document.getElementById('f-mcp-skip-rewrite').checked = (a.mcp_skip_rewrite ?? 0) !== 0;
   document.getElementById('mcp-test-result').textContent = '';
   setTimeout(() => { autoFormatJSON(document.getElementById('f-mcp-headers')); }, 0);
   document.getElementById('f-name').value              = a.name;
@@ -2926,6 +2939,7 @@ async function saveAvatar() {
     mcp_url:             document.getElementById('f-mcp-url').value.trim(),
     mcp_headers:         (() => { const v = document.getElementById('f-mcp-headers').value.trim() || '{}'; try { const p = JSON.parse(v); const f = JSON.stringify(p, null, 2); document.getElementById('f-mcp-headers').value = f; return f; } catch { return v; } })(),
     mcp_tool_filter:     document.getElementById('f-mcp-tool-filter').value.trim(),
+    mcp_skip_rewrite:   document.getElementById('f-mcp-skip-rewrite').checked ? 1 : 0,
     name:              document.getElementById('f-name').value,
     label:             document.getElementById('f-label').value.trim() || document.getElementById('f-name').value,
     webhook_say_token: document.getElementById('f-webhook-say-token').value.trim(),

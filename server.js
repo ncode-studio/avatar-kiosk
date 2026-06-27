@@ -1686,12 +1686,14 @@ app.post('/api/chat', async (req, res) => {
         const response = await aiClient.messages.create(params);
         chatTokensIn  += response.usage?.input_tokens  || 0;
         chatTokensOut += response.usage?.output_tokens || 0;
+        console.log(`[MCP-LOOP] iter=${i} stop=${response.stop_reason} tokens_in=${response.usage?.input_tokens} tokens_out=${response.usage?.output_tokens} content_types=${response.content.map(b=>b.type).join(',')}`);
         if (response.stop_reason !== 'tool_use') {
           reply = response.content.find(b => b.type === 'text')?.text || '';
           break;
         }
         iterMsgs.push({ role: 'assistant', content: response.content });
         const toolResults = [];
+        const toolOutputs  = [];
         for (const block of response.content) {
           if (block.type !== 'tool_use') continue;
           let result;
@@ -1701,6 +1703,13 @@ app.post('/api/chat', async (req, res) => {
               : await callMcpTool(block.name, block.input);
           } catch (e) { result = `Errore: ${e.message}`; }
           toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+          toolOutputs.push({ name: block.name, content: String(result) });
+        }
+        // Skip rielaborazione: usa direttamente l'output del tool come risposta finale
+        if (avatar?.mcp_skip_rewrite && toolOutputs.length > 0) {
+          reply = toolOutputs.map(t => t.content).join('\n\n').trim();
+          console.log(`[MCP-SKIP] mcp_skip_rewrite attivo → uso output tool direttamente (${reply.length} chars)`);
+          break;
         }
         iterMsgs.push({ role: 'user', content: toolResults });
       }
@@ -1709,6 +1718,7 @@ app.post('/api/chat', async (req, res) => {
     logRequest(avatarId, 'chat', chatIp, false, chatTokensIn, chatTokensOut);
     console.log(`[TOKENS] avatar=${avatarId} provider=${aiProvider} model=${avatar?.openai_model || avatar?.anthropic_model || 'default'} in=${chatTokensIn} out=${chatTokensOut}`);
     history.push({ role: 'assistant', content: reply });
+    console.log(`[CHAT-REPLY] avatar=${avatarId} provider=${aiProvider} reply="${String(reply).slice(0,300)}"`);
     res.json({ reply, sessionId: sid });
   } catch (error) {
     console.error('Chat error:', error);
