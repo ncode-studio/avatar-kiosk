@@ -1193,6 +1193,234 @@ function _buildWakeWords() {
   return words;
 }
 
+//  FUZZY MATCHING PER WAKE WORD
+// ═══════════════════════════════════════════════════════════════════════════
+// Normalizzazione comune: lowercase + rimozione accenti + pulizia punteggiatura
+function _normText(s) {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[.,!?']/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// Distanza di Levenshtein — usata per tollerare piccole variazioni fonetiche
+function _levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const m = [];
+  for (let i = 0; i <= b.length; i++) m[i] = [i];
+  for (let j = 0; j <= a.length; j++) m[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      m[i][j] = b[i-1] === a[j-1]
+        ? m[i-1][j-1]
+        : Math.min(m[i-1][j-1] + 1, m[i][j-1] + 1, m[i-1][j] + 1);
+    }
+  }
+  return m[b.length][a.length];
+}
+
+// Comprime vocali ripetute: 'sofiaaaa' → 'sofia', 'ciaoooo' → 'cia'.
+// Utile per gestire trascrizioni italiane dove l'utente vocalizza ("ciaooo").
+function _collapseVowels(s) {
+  return s.replace(/([aeiou])\1+/g, '$1');
+}
+
+// Match incrementale della wake word su transcript (anche parziali).
+// Ritorna { matched: bool, endIndex: number, confidence: 0..1, wakeUsed: string }
+// Tollera variazioni fonetiche tramite Levenshtein pesata sulla lunghezza,
+// compressione vocali ripetute, e richiede che la prima lettera di ogni
+// parola della wake word coincida (scarta "sonia" quando la wake è "sofia").
+function _matchWakeWord(text, wakeWords) {
+  const words = text.split(/\s+/).filter(Boolean);
+  let best = null;
+  for (const w of wakeWords) {
+    const ww = _normText(w).split(/\s+/).filter(Boolean);
+    if (!ww.length) continue;
+    for (let k = 0; k <= words.length - ww.length; k++) {
+      let totalDist = 0;
+      let totalLen = 0;
+      let firstCharMismatch = false;
+      for (let j = 0; j < ww.length; j++) {
+        const wA = ww[j];
+        const wBraw = words[k + j];
+        const wB    = _collapseVowels(wBraw);
+        // Prova sia diretto sia con vocali compresse, prendi il migliore
+        const d1 = _levenshtein(wA, wBraw);
+        const d2 = _levenshtein(wA, wB);
+        const dist = Math.min(d1, d2);
+        const matched = d1 <= d2 ? wBraw : wB;
+        totalDist += dist;
+        totalLen += Math.max(wA.length, matched.length);
+        if (wA[0] !== matched[0]) firstCharMismatch = true;
+      }
+      const score = totalLen ? 1 - totalDist / totalLen : 0;
+      // Soglie: tollerante su parola singola, stretta su multi-word.
+      // Multi-word richiede che TUTTE le parole siano quasi identiche
+      // perché la wake intera deve essere rilevata (es. "ciao sonia" NON
+      // deve matchare "ciao sofia").
+      const minScore = ww.length === 1 ? 0.82 : 0.92;
+      if (!firstCharMismatch && score >= minScore) {
+        const candidate = { matched: true, endIndex: k + ww.length, confidence: score, wakeUsed: w };
+        if (!best || candidate.confidence > best.confidence) best = candidate;
+      }
+    }
+  }
+  return best || { matched: false, endIndex: -1, confidence: 0, wakeUsed: '' };
+}
+
+// Estrae solo le parole DOPO la wake word, scartando tutto ciò che precede
+function _afterWake(text, wakeWords) {
+  const m = _matchWakeWord(text, wakeWords);
+  const words = text.split(/\s+/).filter(Boolean);
+  const tail = m.matched ? words.slice(m.endIndex) : words;
+  const wwParts = new Set(wakeWords.flatMap(w => _normText(w).split(/\s+/)));
+  return tail.filter(w => w && !wwParts.has(_normText(w))).join(' ').trim();
+}
+
+// Ring buffer diagnostico: ultimi N transcript rifiutati per capire perché la
+// wake word non ha matchato. Esposto in window per debug da console kiosk.
+const _wakeDiagBuf = [];
+function _wakeDiagPush(entry) {
+  _wakeDiagBuf.push({ ts: Date.now(), ...entry });
+  if (_wakeDiagBuf.length > 30) _wakeDiagBuf.shift();
+}
+window._getWakeDiag = () => _wakeDiagBuf.slice();
+
+function startWakeWord() {
+  if (!CONFIG.wakeWordEnabled && !CONFIG.wakeWordAlwaysRequired) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { console.warn('[WakeWord] Web Speech API non supportata'); return; }
+  if (state.wakeRecognition) { console.log('[WakeWord] già attiva'); return; }
+  console.log('[WakeWord] avvio, mode:', state.mode);
+
+  const rec = new SR();
+  rec.lang = 'it-IT';
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.maxAlternatives = 3;
+  state.wakeRecognition = rec;
+
+  const wakeWords = _buildWakeWords();
+  const _norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  rec.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const isFinal = e.results[i].isFinal;
+      const text = e.results[i][0].transcript.toLowerCase().trim();
+      if (!text) continue;
+
+      const normText = _norm(text).replace(/[.,!?']/g, '').replace(/\s+/g, ' ').trim();
+      const wakeMatch = _matchWakeWord(normText, wakeWords);
+      const isWake = wakeMatch.matched;
+
+      // Diagnostica: logga i match (o near-miss) per debug da console
+      if (isWake || normText.length > 4) {
+        _wakeDiagPush({
+          final: isFinal, mode: state.mode,
+          raw: text.slice(0, 80),
+          norm: normText.slice(0, 80),
+          matched: isWake,
+          conf: +wakeMatch.confidence.toFixed(2),
+          used: wakeMatch.wakeUsed,
+        });
+      }
+
+      // ── Attivazione da idle ──────────────────────────────────────────────
+      if (isWake && state.mode === 'idle') {
+        stopWakeWord();
+        wakeUp();
+        return;
+      }
+
+      // ── Wake word durante speaking → interrompi e attiva registrazione ─────
+      if (isWake && state.mode === 'speaking' && CONFIG.wakeWordAlwaysRequired) {
+        stopCurrentAudio();
+        state.wakeActivated = true;
+        setMode('recording');
+        clearTimeout(state._wakeTimeout);
+        state._wakeTimeout = setTimeout(() => {
+          if (state.mode === 'recording' && state.wakeActivated) {
+            state.wakeActivated = false;
+            setMode('listening');
+          }
+        }, CONFIG.vadWakeTimeout);
+        if (isFinal) {
+          const content = _afterWake(normText, wakeWords);
+          if (content) {
+            state.wakeActivated = false;
+            clearTimeout(state._wakeTimeout);
+            setMode('thinking');
+            processUserInput(content);
+          }
+        }
+        return;
+      }
+
+      // ── Wake word in ascolto → attiva registrazione ──────────────────────
+      if (isWake && state.mode === 'listening' && CONFIG.wakeWordAlwaysRequired) {
+        if (!state.wakeActivated) {
+          state.wakeActivated = true;
+          setMode('recording');
+          clearTimeout(state._wakeTimeout);
+          state._wakeTimeout = setTimeout(() => {
+            if (state.mode === 'recording' && state.wakeActivated) {
+              state.wakeActivated = false;
+              setMode('listening');
+            }
+          }, CONFIG.vadWakeTimeout);
+        }
+        // Controlla se c'è già una domanda nella stessa utterance (final)
+        if (isFinal) {
+          const content = _afterWake(normText, wakeWords);
+          if (content) {
+            state.wakeActivated = false;
+            clearTimeout(state._wakeTimeout);
+            setMode('thinking');
+            processUserInput(content);
+          }
+        }
+        return;
+      }
+
+      // ── Domanda dopo wake word (utterance successiva o finale con wake+domanda) ─
+      if (state.mode === 'recording' && state.wakeActivated && CONFIG.wakeWordAlwaysRequired && isFinal) {
+        const content = _afterWake(normText, wakeWords);
+        if (content) {
+          state.wakeActivated = false;
+          clearTimeout(state._wakeTimeout);
+          setMode('thinking');
+          processUserInput(content);
+        }
+        // se content è vuoto: solo wake word ripetuta, resta in recording
+        return;
+      }
+    }
+  };
+
+  rec.onerror = e => {
+    if (e.error === 'no-speech' || e.error === 'aborted') return;
+    console.warn('[WakeWord] errore:', e.error);
+  };
+
+  rec.onend = () => {
+    if (rec !== state.wakeRecognition) return; // istanza stale, non riavviare
+    const shouldRestart =
+      (state.mode === 'idle' ||
+       (CONFIG.wakeWordAlwaysRequired && (state.mode === 'listening' || state.mode === 'speaking' || state.mode === 'recording' || state.mode === 'thinking')));
+    if (shouldRestart) {
+      const delay = state.mode === 'recording' ? 50 : 300;
+      setTimeout(() => { try { rec.start(); } catch(e) {} }, delay);
+    }
+  };
+
+  try { rec.start(); } catch(e) { console.warn('[WakeWord] start fallito:', e.message); }
+}
+
+function stopWakeWord() {
+  if (!state.wakeRecognition) return;
+  try { state.wakeRecognition.abort(); } catch(_) {}
+  state.wakeRecognition = null;
+}
+
 function startWakeWord() {
   if (!CONFIG.wakeWordEnabled && !CONFIG.wakeWordAlwaysRequired) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
