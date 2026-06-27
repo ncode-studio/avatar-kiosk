@@ -4181,8 +4181,11 @@ async function initAvatar() {
     } else if (CONFIG.wakeWordEnabled) {
       // Casi 4,5: avvia subito la recognition in idle così la wake word funziona senza toccare
       setTimeout(() => { if (state.mode === 'idle') startWakeWord(); }, 500);
+    } else if (CONFIG.micEnabled) {
+      // Caso 6: wake word disabilitata → avvia VAD in idle così ascolta subito
+      // senza richiedere click. Al primo parlato, onSpeechStart chiama wakeUp().
+      setTimeout(() => { if (state.mode === 'idle' && !state.vad) _startVad(); }, 500);
     }
-    // Caso 6: nessuna recognition, solo click su overlay → wakeUp()
 
     // Aggiorna pulsanti con la config caricata
     updateMicBtn();
