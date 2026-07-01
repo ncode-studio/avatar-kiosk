@@ -1961,7 +1961,23 @@ function triggerTalkingGesture() {
 let _lipAudioCtx = null;
 let _iosAudioSrc = null;
 let _iosAudioGain = null;
+let _iosAudioEl = null;        // <audio> element riusato su iOS (allegato al DOM)
 const _isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+// Crea un <audio> off-screen, lo allega al DOM, e lo riusa per ogni TTS.
+// Su iOS Safari, gli <audio> non collegati al DOM spesso non riproducono audio
+// o vengono bloccati dal sistema.
+function _getIosAudioEl() {
+  if (_iosAudioEl && document.body.contains(_iosAudioEl)) return _iosAudioEl;
+  _iosAudioEl = document.createElement('audio');
+  _iosAudioEl.preload = 'auto';
+  _iosAudioEl.setAttribute('playsinline', '');
+  _iosAudioEl.setAttribute('webkit-playsinline', '');
+  _iosAudioEl.setAttribute('x-webkit-airplay', 'allow');
+  _iosAudioEl.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+  document.body.appendChild(_iosAudioEl);
+  return _iosAudioEl;
+}
 
 function _b64ToArrayBuffer(b64) {
   const bin = atob(b64);
@@ -2002,34 +2018,38 @@ async function handleSayMessage(text) {
 
 async function playTTSAudio(ttsData) {
   if (_isIOS) {
-    // Su iOS: usa <audio> HTML element invece di AudioContext puro.
-    // AudioContext puro puo' finire in capsula su alcune versioni iOS;
-    // l'element <audio> va di default sull'altoparlante principale.
-    // Comunque decodifichiamo per il lip-sync se serve l'analyser.
+    // Su iOS: usa <audio> HTML element allegato al DOM (sbloccato in wakeUp durante il gesto).
     try {
       if (_lipAudioCtx?.state === 'suspended') await _lipAudioCtx.resume().catch(() => {});
       if (_iosAudioSrc) { try { _iosAudioSrc.stop(); } catch(_){} _iosAudioSrc = null; }
       if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} _iosAudioGain = null; }
-      // Crea <audio> element off-DOM per riprodurre l'mp3
-      const dataUrl = `data:audio/mpeg;base64,${ttsData.audio}`;
-      const audio = new Audio(dataUrl);
-      audio.preload = 'auto';
-      audio.playsInline = true;
-      audio.setAttribute('playsinline', '');
-      // Volume: mobile 1.6x, desktop 1.0, configurabile via CONFIG.ttsVolume
-      const baseVol = (window.innerWidth <= 600 ? 1.6 : 1.0);
+
+      const audio = _getIosAudioEl();
+      // Stop eventuale riproduzione in corso
+      try { audio.pause(); } catch(_){}
+      audio.currentTime = 0;
+      // Imposta src (questo trigger un reload del media element)
+      audio.src = `data:audio/mpeg;base64,${ttsData.audio}`;
+      // Volume: mobile 1.6x clampato a 1.0 (HTMLAudio.volume max 1.0),
+      // desktop 1.0. Configurabile via CONFIG.ttsVolume.
+      const baseVol = (window.innerWidth <= 600 ? 1.0 : 1.0);
       const userVol = (typeof CONFIG.ttsVolume === 'number' ? CONFIG.ttsVolume : 1.0);
-      audio.volume = Math.min(1.0, baseVol * userVol); // HTMLAudio.volume e' clampato [0,1]
+      audio.volume = Math.min(1.0, baseVol * userVol);
       state.currentAudio = audio;
       await new Promise(resolve => {
-        audio.addEventListener('ended', resolve, { once: true });
-        audio.addEventListener('error', resolve, { once: true });
+        const done = () => resolve();
+        audio.addEventListener('ended', done, { once: true });
+        audio.addEventListener('error', done, { once: true });
         // startLipSync per il movimento labiale
         if (typeof startLipSync === 'function') startLipSync(audio, ttsData.alignment);
-        audio.play().catch(resolve);
+        // play() ritorna una Promise; su iOS puo' rifiutare se non c'e' gesto utente
+        const p = audio.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(err => { console.warn('[iOS audio] play() rejected:', err); resolve(); });
+        }
       });
     } catch (e) { console.warn('iOS audio error', e); }
-    if (state.currentAudio?._ios) state.currentAudio = null;
+    if (state.currentAudio === _iosAudioEl) state.currentAudio = null;
     return;
   }
   // Desktop: HTMLAudioElement
@@ -2347,6 +2367,8 @@ document.addEventListener('DOMContentLoaded', () => {
   updateAudioBtn();
   updatePttBtn();
   _initPttListeners();
+  // Pre-alloca l'element <audio> iOS (collegato al DOM) per evitare race conditions
+  if (_isIOS) { try { _getIosAudioEl(); } catch(_){} }
 
   document.body.addEventListener('pointerdown', e => {
     if (!CONFIG.touchStopSpeaking) return;
