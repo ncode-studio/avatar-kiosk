@@ -3048,17 +3048,6 @@ async function _pttStart(opts = {}) {
     return;
   }
 
-  // Warm-up audio per i successivi TTS: ora che il mic e' attivo,
-  // sblocca anche la sessione audio speaker con un blob silent.
-  // Senza questo, play() sul TTS arriva rifiutato per mancanza di user gesture.
-  try {
-    if (_isIOS || /Android/i.test(navigator.userAgent)) {
-      const a = _getIosAudioEl();
-      a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-      a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
-    }
-  } catch (_) {}
-
   // AnalyserNode per feedback waveform live (RMS sullo stream)
   try {
     const ctx = _lipAudioCtx || (_lipAudioCtx = new AudioContext());
