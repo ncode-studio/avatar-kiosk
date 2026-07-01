@@ -690,6 +690,13 @@
       user-select: none !important;
       touch-action: none !important;
       -webkit-tap-highlight-color: transparent !important;
+      -webkit-user-drag: none !important;
+      -webkit-touch-callout: none !important;
+    }
+    /* Blocca anche le gesture multitouch (pinch, rotation) sul PTT */
+    #ptt-btn {
+      pointer-events: auto !important;
+      overscroll-behavior: contain !important;
     }
   </style>
 </head>
@@ -3060,6 +3067,22 @@ function _pttAbort() {
 function _initPttListeners() {
   const btn = document.getElementById('ptt-btn');
   if (!btn) return;
+
+  // Difesa aggressiva iOS: intercetta TUTTI gli eventi touch con passive:false
+  // per impedire al sistema operativo di interpretare il long-press come
+  // menu contestuale / selezione / anteprima link.
+  const _touchBlock = e => { if (CONFIG.pttEnabled) e.preventDefault(); };
+  btn.addEventListener('touchstart',  _touchBlock, { passive: false });
+  btn.addEventListener('touchmove',   _touchBlock, { passive: false });
+  btn.addEventListener('touchend',    _touchBlock, { passive: false });
+  btn.addEventListener('touchcancel', _touchBlock, { passive: false });
+
+  // Blocca gesture multitouch native (pinch, rotation, swipe-back) iOS
+  const _gestureBlock = e => { if (CONFIG.pttEnabled) e.preventDefault(); };
+  btn.addEventListener('gesturestart',   _gestureBlock);
+  btn.addEventListener('gesturechange',  _gestureBlock);
+  btn.addEventListener('gestureend',     _gestureBlock);
+
   btn.addEventListener('pointerdown', e => {
     if (!CONFIG.pttEnabled) return;
     e.preventDefault();
@@ -3071,6 +3094,8 @@ function _initPttListeners() {
   btn.addEventListener('pointercancel', e => { if (CONFIG.pttEnabled) { e.preventDefault(); _pttStop(); } });
   // Blocca il menu contestuale nativo (long-press iOS/Android)
   btn.addEventListener('contextmenu', e => e.preventDefault());
+  // Blocca il menu di selezione nativo
+  btn.addEventListener('selectstart', e => e.preventDefault());
   // Safety net globale: se la pagina perde visibilità o focus mentre stiamo registrando
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) _pttAbort();
