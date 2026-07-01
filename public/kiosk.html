@@ -2381,6 +2381,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const tag = e.target?.tagName?.toUpperCase();
     if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'TEXTAREA') return;
     stopCurrentAudio();
+    // Aggiorna lo stato: l'audio non sta piu' suonando, quindi la wave del PTT
+    // non deve restare visibile. Forza il refresh del bottone.
+    if (state.mode === 'speaking') setMode('listening');
+    else if (typeof updatePttBtn === 'function') updatePttBtn();
   });
 });
 
