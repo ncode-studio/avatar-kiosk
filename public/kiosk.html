@@ -2411,6 +2411,8 @@ function stopCurrentAudio() {
     }
     state.currentAudio = null;
   }
+  // Aggiorna subito il bottone PTT per nascondere la wave (l'audio non sta piu' suonando)
+  if (CONFIG.pttEnabled && typeof updatePttBtn === 'function') updatePttBtn();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
