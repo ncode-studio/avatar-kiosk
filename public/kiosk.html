@@ -2814,10 +2814,27 @@ function _pttPickMimeType() {
   return '';
 }
 
+function _pttResetVisual() {
+  const btn = document.getElementById('ptt-btn');
+  if (!btn) return;
+  btn.classList.remove('ptt-pressing');
+  btn.style.transform = (window.innerWidth <= 600 ? 'translateX(-50%)' : '');
+  _pttVoiceActive = false;
+  updatePttBtn();
+}
+
 async function _pttStart() {
   _pttStopPending = false;
+  const btn = document.getElementById('ptt-btn');
+
   if (state.mode === 'speaking') { stopCurrentAudio(); return; }
   if (state.mode === 'thinking' || state.mode === 'recording') return;
+
+  // Feedback visivo immediato, prima di qualsiasi await
+  if (btn) {
+    btn.classList.add('ptt-pressing');
+    btn.style.transform = (window.innerWidth <= 600 ? 'translateX(-50%) scale(0.95)' : 'scale(0.95)');
+  }
 
   // Se siamo in idle, fare wakeUp per inizializzare la sessione e avviare la wakeword
   const overlay = document.getElementById('idle-overlay');
@@ -2845,13 +2862,13 @@ async function _pttStart() {
   }
 
   // Se pointerup era già arrivato durante l'await, non avviare nulla
-  if (_pttStopPending) { _pttStopPending = false; return; }
+  if (_pttStopPending) { _pttStopPending = false; _pttResetVisual(); return; }
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    console.warn('[PTT] getUserMedia non supportato'); return;
+    console.warn('[PTT] getUserMedia non supportato'); _pttResetVisual(); return;
   }
   if (!window.MediaRecorder) {
-    console.warn('[PTT] MediaRecorder non supportato'); return;
+    console.warn('[PTT] MediaRecorder non supportato'); _pttResetVisual(); return;
   }
 
   // Se una registrazione precedente è ancora attiva, pulisci
@@ -2864,7 +2881,7 @@ async function _pttStart() {
       video: false,
     });
   } catch (e) {
-    console.warn('[PTT] getUserMedia errore:', e); return;
+    console.warn('[PTT] getUserMedia errore:', e); _pttResetVisual(); return;
   }
 
   // Se l'utente ha già rilasciato mentre chiedevamo il permesso, libera subito
@@ -2872,6 +2889,7 @@ async function _pttStart() {
     _pttStopPending = false;
     try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {}
     _pttStream = null;
+    _pttResetVisual();
     return;
   }
 
@@ -2905,6 +2923,7 @@ async function _pttStart() {
     console.warn('[PTT] MediaRecorder ctor errore:', e);
     try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {}
     _pttStream = null;
+    _pttResetVisual();
     return;
   }
 
@@ -2928,6 +2947,7 @@ async function _pttStart() {
     if (_pttStream) { try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {} _pttStream = null; }
     if (_pttAnalyserRAF) { cancelAnimationFrame(_pttAnalyserRAF); _pttAnalyserRAF = 0; }
     _pttAnalyser = null;
+    _pttResetVisual();
 
     if (!chunks.length || duration < 250) { setMode('listening'); return; }
 
@@ -2943,6 +2963,7 @@ async function _pttStart() {
     console.warn('[PTT] start errore:', e);
     try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {}
     _pttStream = null;
+    _pttResetVisual();
     setMode('listening');
     return;
   }
@@ -2952,13 +2973,7 @@ async function _pttStart() {
 
 function _pttStop() {
   _pttStopPending = false;
-  _pttVoiceActive = false;
-  const btn = document.getElementById('ptt-btn');
-  if (btn) {
-    btn.classList.remove('ptt-pressing');
-    btn.style.transform = (window.innerWidth <= 600 ? 'translateX(-50%)' : '');
-    updatePttBtn();
-  }
+  _pttResetVisual();
   if (_pttAnalyserRAF) { cancelAnimationFrame(_pttAnalyserRAF); _pttAnalyserRAF = 0; }
   if (!_pttRecorder) {
     // start non ancora partito: segna stop pending così _pttStart può abortire
@@ -2981,6 +2996,21 @@ function _initPttListeners() {
   });
   btn.addEventListener('pointerup',     e => { if (CONFIG.pttEnabled) _pttStop(); });
   btn.addEventListener('pointercancel', e => { if (CONFIG.pttEnabled) _pttStop(); });
+  // Fallback: se il dito esce dal pulsante o il browser rilascia la cattura
+  // senza emettere pointerup (succede su alcuni mobile), forza lo stop
+  btn.addEventListener('lostpointercapture', () => {
+    if (CONFIG.pttEnabled && _pttRecorder) _pttStop();
+  });
+  btn.addEventListener('pointerleave', () => {
+    if (CONFIG.pttEnabled && _pttRecorder) _pttStop();
+  });
+  // safety net globale: se la pagina perde visibilità o focus mentre stiamo registrando
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && _pttRecorder) _pttStop();
+  });
+  window.addEventListener('blur', () => {
+    if (_pttRecorder) _pttStop();
+  });
 
   // In PTT mode blocca il click sull'idle overlay solo se non siamo in idle
   const overlay = document.getElementById('idle-overlay');
