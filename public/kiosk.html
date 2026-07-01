@@ -3167,31 +3167,23 @@ function _initPttListeners() {
     if (!CONFIG.pttEnabled) return;
     e.preventDefault();
     e.stopPropagation();
+    if (!e.isPrimary) return;
     btn.setPointerCapture(e.pointerId);
     if (_isMobilePtt()) {
       // Mobile: push-to-talk classico (start su pressione, stop su rilascio)
       _pttStart({ mode: 'hold' });
     } else {
       // Web/desktop: toggle. Se non sta registrando, avvia. Se sta registrando, ferma.
-      if (_pttRecorder) {
+      // Guard: ignora se stiamo gia' fermando o se l'utente ha appena rilasciato
+      if (_pttRecorder && !_pttStopping) {
         _pttStop();
-      } else if (!_pttStopping) {
+      } else if (!_pttRecorder && !_pttStopping) {
         _pttStart({ mode: 'auto' });
       }
     }
   });
   btn.addEventListener('pointerup',     e => { if (CONFIG.pttEnabled && _isMobilePtt()) { e.preventDefault(); _pttStop(); } });
   btn.addEventListener('pointercancel', e => { if (CONFIG.pttEnabled && _isMobilePtt()) { e.preventDefault(); _pttStop(); } });
-  // Fallback click: se per qualche motivo pointerdown non ha processato il toggle
-  // (es. pointer capture perso), il click comunque ferma l'ascolto su web.
-  btn.addEventListener('click', e => {
-    if (!CONFIG.pttEnabled || _isMobilePtt()) return;
-    if (_pttRecorder && !_pttStopping) {
-      e.preventDefault();
-      e.stopPropagation();
-      _pttStop();
-    }
-  });
   // Blocca il menu contestuale nativo (long-press iOS/Android)
   btn.addEventListener('contextmenu', e => e.preventDefault());
   // Blocca il menu di selezione nativo
