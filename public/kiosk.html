@@ -2154,7 +2154,6 @@ function addToHistory(role, text) {
 
 async function processUserInput(text) {
   if (!text?.trim()) return;
-  console.log('[DIAG] processUserInput chiamato, mode:', state.mode, 'micEnabled:', CONFIG.micEnabled, 'pttEnabled:', CONFIG.pttEnabled, 'vad:', !!state.vad, 'wakeRec:', !!state.wakeRecognition);
   state.vad?.pause();
 
   // Nasconde il bubble di benvenuto al primo messaggio
@@ -2807,7 +2806,8 @@ function updatePttBtn(viewportW) {
 
 // PTT tramite MediaRecorder: registra finché l'utente tiene premuto il pulsante.
 // Niente Web Speech: sui browser mobile SR si auto-ferma dopo pochi secondi.
-let _pttStream = null;
+let _pttStream = null;        // stream della registrazione corrente
+let _pttWarmStream = null;    // stream pre-acquisito al boot per evitare popup iOS
 let _pttRecorder = null;
 let _pttChunks = [];
 let _pttStartedAt = 0;
@@ -2816,6 +2816,26 @@ let _pttStopping = false;   // stop già in corso, ignora ulteriori trigger
 let _pttVoiceActive = false; // voce rilevata (RMS) per feedback visivo
 let _pttAnalyserRAF = 0;
 let _pttAnalyser = null; // { ctx, src, an }
+let _pttWarming = false;     // pre-warm in corso
+
+// Pre-warm del microfono: chiede il permesso una sola volta al boot.
+// Evita che il popup nativo iOS appaia durante la pressione del PTT
+// (il popup fa perdere il focus e blocca la registrazione).
+async function _pttPreWarm() {
+  if (_pttWarmStream || _pttWarming) return;
+  if (!navigator.mediaDevices?.getUserMedia) return;
+  _pttWarming = true;
+  try {
+    _pttWarmStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+      video: false,
+    });
+  } catch (e) {
+    console.warn('[PTT] pre-warm getUserMedia errore:', e);
+  } finally {
+    _pttWarming = false;
+  }
+}
 
 function _pttPickMimeType() {
   const candidates = [
@@ -2892,13 +2912,25 @@ async function _pttStart() {
   try { if (_pttRecorder && _pttRecorder.state !== 'inactive') _pttRecorder.stop(); } catch (_) {}
   if (_pttStream) { try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {} _pttStream = null; }
 
-  try {
-    _pttStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
-      video: false,
-    });
-  } catch (e) {
-    console.warn('[PTT] getUserMedia errore:', e); _pttResetVisual(); return;
+  // Riusa lo stream pre-warmato se disponibile (nessun popup iOS).
+  // Altrimenti fallback a getUserMedia.
+  if (_pttWarmStream && _pttWarmStream.getAudioTracks().length > 0) {
+    const tracks = _pttWarmStream.getAudioTracks().map(t => t.clone());
+    _pttStream = new MediaStream(tracks);
+  } else {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.warn('[PTT] getUserMedia non supportato'); _pttResetVisual(); return;
+    }
+    try {
+      _pttStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+        video: false,
+      });
+      // Memorizza come warm per le prossime registrazioni
+      _pttWarmStream = _pttStream;
+    } catch (e) {
+      console.warn('[PTT] getUserMedia errore:', e); _pttResetVisual(); return;
+    }
   }
 
   // Se l'utente ha già rilasciato mentre chiedevamo il permesso, libera subito
@@ -4326,6 +4358,10 @@ async function initAvatar() {
       CONFIG.wakeWordAlwaysRequired = false;
       CONFIG.micEnabled = false;
       updateMicBtn();
+      // Pre-warm del microfono: chiede il permesso una sola volta al boot
+      // per evitare il popup iOS durante la pressione del PTT (che fa perdere il focus).
+      // Lo stream resta aperto e viene riusato da ogni registrazione.
+      setTimeout(() => _pttPreWarm(), 200);
     } else if (CONFIG.idleDisabled) {
       // Casi 1,2,3: mostra chat subito, avvia sessione al primo gesto o dopo 600ms
       document.getElementById('idle-overlay').classList.add('hidden');
