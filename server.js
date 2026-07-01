@@ -1537,8 +1537,10 @@ app.post('/api/chat', async (req, res) => {
     const mcpFilter = (avatar?.mcp_tool_filter || '').split(',').map(s => s.trim()).filter(Boolean);
 
     if (mcpUrl && avatar?.avatar_mode === 'mcp') {
+      console.log(`[MCP-SETUP] avatar=${avatarId} modalità MCP, transport detection in corso...`);
       try {
         const transport = await mcpDetectTransport(mcpUrl, mcpHeaders);
+        console.log(`[MCP-SETUP] avatar=${avatarId} transport=${transport}`);
 
         if (transport === 'sse') {
           // SSE: ogni call è già indipendente, usa il percorso legacy

@@ -2790,13 +2790,29 @@ function updatePttBtn(viewportW) {
   btn.style.display = 'flex';
 }
 
-// PTT tramite SpeechRecognition (come la wakeword)
-let _pttRecognition = null;
-let _pttFinalText = '';
-let _pttInterimText = '';
+// PTT tramite MediaRecorder: registra finché l'utente tiene premuto il pulsante.
+// Niente Web Speech: sui browser mobile SR si auto-ferma dopo pochi secondi.
+let _pttStream = null;
+let _pttRecorder = null;
+let _pttChunks = [];
 let _pttStartedAt = 0;
 let _pttStopPending = false; // pointerup arrivato prima che _pttStart finisse
-let _pttVoiceActive = false; // voce rilevata dalla SpeechRecognition
+let _pttVoiceActive = false; // voce rilevata (RMS) per feedback visivo
+let _pttAnalyserRAF = 0;
+let _pttAnalyser = null; // { ctx, src, an }
+
+function _pttPickMimeType() {
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+  ];
+  for (const t of candidates) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return '';
+}
 
 async function _pttStart() {
   _pttStopPending = false;
@@ -2807,7 +2823,7 @@ async function _pttStart() {
   const overlay = document.getElementById('idle-overlay');
   if (overlay && !overlay.classList.contains('hidden')) await wakeUp();
 
-  // Ferma sempre la wakeword: due SpeechRecognition parallele consumano lo stesso mic
+  // Ferma sempre la wakeword: due consumatori dello stesso mic si pestano a vicenda
   stopWakeWord();
 
   // Sblocca AudioContext su iOS (richiede gesto utente)
@@ -2828,63 +2844,130 @@ async function _pttStart() {
     resetIdleTimer();
   }
 
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { console.warn('[PTT] SpeechRecognition non supportato'); return; }
+  // Se pointerup era già arrivato durante l'await, non avviare nulla
+  if (_pttStopPending) { _pttStopPending = false; return; }
 
-  if (_pttRecognition) { try { _pttRecognition.abort(); } catch(_) {} }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    console.warn('[PTT] getUserMedia non supportato'); return;
+  }
+  if (!window.MediaRecorder) {
+    console.warn('[PTT] MediaRecorder non supportato'); return;
+  }
 
-  _pttFinalText = '';
-  _pttInterimText = '';
+  // Se una registrazione precedente è ancora attiva, pulisci
+  try { if (_pttRecorder && _pttRecorder.state !== 'inactive') _pttRecorder.stop(); } catch (_) {}
+  if (_pttStream) { try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {} _pttStream = null; }
+
+  try {
+    _pttStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+      video: false,
+    });
+  } catch (e) {
+    console.warn('[PTT] getUserMedia errore:', e); return;
+  }
+
+  // Se l'utente ha già rilasciato mentre chiedevamo il permesso, libera subito
+  if (_pttStopPending) {
+    _pttStopPending = false;
+    try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+    _pttStream = null;
+    return;
+  }
+
+  // AnalyserNode per feedback waveform live (RMS sullo stream)
+  try {
+    const ctx = _lipAudioCtx || (_lipAudioCtx = new AudioContext());
+    const src = ctx.createMediaStreamSource(_pttStream);
+    const an = ctx.createAnalyser();
+    an.fftSize = 512;
+    src.connect(an);
+    _pttAnalyser = { ctx, src, an };
+    const buf = new Uint8Array(an.fftSize);
+    const tick = () => {
+      if (!_pttAnalyser) return;
+      an.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      const rms = Math.sqrt(sum / buf.length);
+      const active = rms > 0.02;
+      if (active !== _pttVoiceActive) { _pttVoiceActive = active; updatePttBtn(); }
+      _pttAnalyserRAF = requestAnimationFrame(tick);
+    };
+    _pttAnalyserRAF = requestAnimationFrame(tick);
+  } catch (e) { console.warn('[PTT] analyser errore:', e); }
+
+  const mimeType = _pttPickMimeType();
+  let rec;
+  try {
+    rec = mimeType ? new MediaRecorder(_pttStream, { mimeType }) : new MediaRecorder(_pttStream);
+  } catch (e) {
+    console.warn('[PTT] MediaRecorder ctor errore:', e);
+    try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+    _pttStream = null;
+    return;
+  }
+
+  _pttRecorder = rec;
+  _pttChunks = [];
   _pttStartedAt = Date.now();
   _pttVoiceActive = false;
+  const actualMime = rec.mimeType || mimeType || 'audio/webm';
 
-  const rec = new SR();
-  rec.continuous = true;
-  rec.interimResults = true;
-  rec.lang = CONFIG.sttLanguage || 'it-IT';
-  _pttRecognition = rec;
-
-  rec.onresult = e => {
-    let final = '', interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) final += e.results[i][0].transcript;
-      else interim += e.results[i][0].transcript;
-    }
-    if (final) { _pttFinalText += final; _pttInterimText = ''; }
-    else if (interim) _pttInterimText = interim;
-    // Mostra waveform al primo segnale vocale
-    if (!_pttVoiceActive) { _pttVoiceActive = true; updatePttBtn(); }
+  rec.ondataavailable = e => {
+    if (e.data && e.data.size > 0) _pttChunks.push(e.data);
   };
 
-  rec.onerror = e => {
-    if (e.error !== 'aborted' && e.error !== 'no-speech') console.warn('[PTT] SR errore:', e.error);
+  rec.onerror = e => { console.warn('[PTT] recorder errore:', e); };
+
+  rec.onstop = async () => {
+    const chunks = _pttChunks;
+    _pttChunks = [];
+    _pttRecorder = null;
+    const duration = Date.now() - _pttStartedAt;
+    if (_pttStream) { try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {} _pttStream = null; }
+    if (_pttAnalyserRAF) { cancelAnimationFrame(_pttAnalyserRAF); _pttAnalyserRAF = 0; }
+    _pttAnalyser = null;
+
+    if (!chunks.length || duration < 250) { setMode('listening'); return; }
+
+    const blob = new Blob(chunks, { type: actualMime });
+    setMode('thinking');
+    // transcribeAndProcess gestisce trascrizione, allucinazioni e stato finale
+    await transcribeAndProcess(blob);
   };
 
-  rec.onend = () => {};
+  try {
+    rec.start(250); // chunk ogni 250ms: nessun limite di durata imposto dal browser
+  } catch (e) {
+    console.warn('[PTT] start errore:', e);
+    try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+    _pttStream = null;
+    setMode('listening');
+    return;
+  }
 
-  try { rec.start(); } catch(e) { console.warn('[PTT] start errore:', e); setMode('listening'); return; }
   setMode('recording');
-  // Se pointerup era già arrivato durante await wakeUp(), stoppa subito
-  if (_pttStopPending) { _pttStopPending = false; _pttStop(); return; }
 }
 
 function _pttStop() {
   _pttStopPending = false;
   _pttVoiceActive = false;
   const btn = document.getElementById('ptt-btn');
-  if (btn) { btn.classList.remove('ptt-pressing'); btn.style.transform = (window.innerWidth <= 600 ? 'translateX(-50%)' : ''); updatePttBtn(); }
-  if (!_pttRecognition) { _pttStopPending = true; return; } // start non ancora completato
-  const rec = _pttRecognition;
-  _pttRecognition = null;
-
-  rec.onend = () => {
-    const text = (_pttFinalText + ' ' + _pttInterimText).trim();
-    const duration = Date.now() - _pttStartedAt;
-    if (!text || duration < 300) { setMode('listening'); return; }
-    setMode('thinking');
-    processUserInput(text);
-  };
-  setTimeout(() => { try { rec.stop(); } catch(_) {} }, CONFIG.vadWakeTimeout ?? 5000);
+  if (btn) {
+    btn.classList.remove('ptt-pressing');
+    btn.style.transform = (window.innerWidth <= 600 ? 'translateX(-50%)' : '');
+    updatePttBtn();
+  }
+  if (_pttAnalyserRAF) { cancelAnimationFrame(_pttAnalyserRAF); _pttAnalyserRAF = 0; }
+  if (!_pttRecorder) {
+    // start non ancora partito: segna stop pending così _pttStart può abortire
+    _pttStopPending = true;
+    if (_pttStream) { try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {} _pttStream = null; }
+    setMode('listening');
+    return;
+  }
+  try { _pttRecorder.stop(); } catch (_) { setMode('listening'); }
 }
 
 function _initPttListeners() {
