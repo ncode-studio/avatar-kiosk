@@ -682,6 +682,15 @@
         transform: translateX(-50%) scale(0.92) !important;
       }
     }
+    /* Disabilita gesture native iOS/Android sul pulsante PTT
+       (long-press → callout/selection menu, double-tap zoom, text selection) */
+    #ptt-btn, #ptt-btn * {
+      -webkit-touch-callout: none !important;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+      touch-action: none !important;
+      -webkit-tap-highlight-color: transparent !important;
+    }
   </style>
 </head>
 <body class="idle-hidden">
@@ -3021,11 +3030,14 @@ function _initPttListeners() {
   btn.addEventListener('pointerdown', e => {
     if (!CONFIG.pttEnabled) return;
     e.preventDefault();
+    e.stopPropagation();
     btn.setPointerCapture(e.pointerId);
     _pttStart();
   });
-  btn.addEventListener('pointerup',     e => { if (CONFIG.pttEnabled) _pttStop(); });
-  btn.addEventListener('pointercancel', e => { if (CONFIG.pttEnabled) _pttStop(); });
+  btn.addEventListener('pointerup',     e => { if (CONFIG.pttEnabled) { e.preventDefault(); _pttStop(); } });
+  btn.addEventListener('pointercancel', e => { if (CONFIG.pttEnabled) { e.preventDefault(); _pttStop(); } });
+  // Blocca il menu contestuale nativo (long-press iOS/Android)
+  btn.addEventListener('contextmenu', e => e.preventDefault());
   // Safety net globale: se la pagina perde visibilità o focus mentre stiamo registrando
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) _pttAbort();
