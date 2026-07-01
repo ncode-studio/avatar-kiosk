@@ -2405,7 +2405,10 @@ function stopCurrentAudio() {
   anim.lipTarget = 0;
   if (state.currentAudio) {
     state.currentAudio.pause();
-    state.currentAudio.dispatchEvent(new Event('ended')); // risolve la Promise naturalmente
+    // dispatchEvent esiste solo su HTMLAudioElement; il wrapper iOS ({pause,_ios:true}) no
+    if (typeof state.currentAudio.dispatchEvent === 'function') {
+      state.currentAudio.dispatchEvent(new Event('ended')); // risolve la Promise naturalmente
+    }
     state.currentAudio = null;
   }
 }
