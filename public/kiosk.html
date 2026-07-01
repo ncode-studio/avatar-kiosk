@@ -2208,6 +2208,11 @@ function addToHistory(role, text) {
 async function processUserInput(text) {
   if (!text?.trim()) return;
   state.vad?.pause();
+  // Barge-in: se l'avatar sta parlando, ferma subito l'audio corrente
+  if (state.currentAudio || state.mode === 'speaking') {
+    stopCurrentAudio();
+    state.bargeIn = true;
+  }
 
   // Nasconde il bubble di benvenuto al primo messaggio
   document.getElementById('response-bubble').style.display = 'none';
