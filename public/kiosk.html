@@ -2018,24 +2018,56 @@ async function handleSayMessage(text) {
 
 async function playTTSAudio(ttsData) {
   if (_isIOS) {
-    // Su iOS: AudioContext + decodeAudioData + GainNode (path originale funzionante).
+    // Su iOS: <audio> element con controls (anche se nascosti) e webkit-playsinline.
+    // L'attributo controls e' fondamentale su iOS Safari per forzare il routing
+    // sull'altoparlante principale invece che sulla capsula earpiece.
     try {
       if (_lipAudioCtx?.state === 'suspended') await _lipAudioCtx.resume().catch(() => {});
-      const buf = await _lipAudioCtx.decodeAudioData(_b64ToArrayBuffer(ttsData.audio));
-      if (_iosAudioSrc) { try { _iosAudioSrc.stop(); } catch(_){} }
-      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} }
-      _iosAudioSrc = _lipAudioCtx.createBufferSource();
-      _iosAudioSrc.buffer = buf;
-      _iosAudioGain = _lipAudioCtx.createGain();
-      const baseVol = (window.innerWidth <= 600 ? 1.6 : 1.0);
-      const userVol = (typeof CONFIG.ttsVolume === 'number' ? CONFIG.ttsVolume : 1.0);
-      _iosAudioGain.gain.value = baseVol * userVol;
-      _iosAudioSrc.connect(_iosAudioGain).connect(_lipAudioCtx.destination);
-      state.currentAudio = { pause: () => { try { _iosAudioSrc?.stop(); } catch(_){} }, _ios: true };
-      await new Promise(resolve => {
-        _iosAudioSrc.onended = resolve;
-        _iosAudioSrc.start(0);
+
+      // Cleanup precedente
+      if (_iosAudioSrc) { try { _iosAudioSrc.disconnect(); } catch(_){} _iosAudioSrc = null; }
+      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} _iosAudioGain = null; }
+
+      // Crea <audio> con controls (anche invisibile) per forzare routing speaker
+      const audio = document.createElement('audio');
+      audio.preload = 'auto';
+      audio.setAttribute('webkit-playsinline', 'true');
+      audio.setAttribute('x-webkit-airplay', 'allow');
+      audio.controls = true; // forza routing speaker su iOS
+      audio.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+      document.body.appendChild(audio);
+      audio.src = `data:audio/mpeg;base64,${ttsData.audio}`;
+
+      // Attendi caricamento
+      await new Promise((resolve) => {
+        if (audio.readyState >= 2) return resolve();
+        audio.addEventListener('loadeddata', resolve, { once: true });
+        audio.addEventListener('error', resolve, { once: true });
+        audio.addEventListener('canplay', resolve, { once: true });
+        setTimeout(resolve, 3000);
       });
+
+      // Volume 1.0 (default), GainNode non applicabile senza MediaElementSource
+      const userVol = (typeof CONFIG.ttsVolume === 'number' ? CONFIG.ttsVolume : 1.0);
+      audio.volume = Math.min(1.0, userVol);
+
+      state.currentAudio = { pause: () => { try { audio.pause(); } catch(_){} }, _ios: true };
+      if (typeof startLipSync === 'function') startLipSync(audio, ttsData.alignment);
+
+      await new Promise(resolve => {
+        const done = () => resolve();
+        audio.addEventListener('ended', done, { once: true });
+        audio.addEventListener('error', done, { once: true });
+        const safetyTimeout = setTimeout(done, 60000);
+        const clearSafety = () => clearTimeout(safetyTimeout);
+        audio.addEventListener('ended', clearSafety, { once: true });
+        audio.addEventListener('error', clearSafety, { once: true });
+        const p = audio.play();
+        if (p && typeof p.catch === 'function') p.catch(err => { console.warn('[iOS audio] play() rejected:', err); resolve(); });
+      });
+
+      // Cleanup
+      try { audio.remove(); } catch(_){}
     } catch (e) { console.warn('iOS audio error', e); }
     if (state.currentAudio?._ios) state.currentAudio = null;
     return;
