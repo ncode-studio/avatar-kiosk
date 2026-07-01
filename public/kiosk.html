@@ -2875,6 +2875,9 @@ let _pttVoiceActive = false; // voce rilevata (RMS) per feedback visivo
 let _pttAnalyserRAF = 0;
 let _pttAnalyser = null; // { ctx, src, an }
 let _pttWarming = false;     // pre-warm in corso
+let _pttMode = 'hold';        // 'hold' = push-to-talk classico, 'auto' = VAD-like con auto-stop al silenzio
+let _pttSilenceTimer = 0;     // timer per auto-stop in modalita' 'auto'
+let _pttVoiceActiveEver = false; // true dopo la prima rilevazione di voce (per gating auto-stop)
 
 // Pre-warm del microfono: chiede il permesso una sola volta al boot.
 // Evita che il popup nativo iOS appaia durante la pressione del PTT
@@ -2914,11 +2917,15 @@ function _pttResetVisual() {
   btn.classList.remove('ptt-pressing');
   btn.style.transform = ''; // delega al CSS (che ha !important)
   _pttVoiceActive = false;
+  _pttVoiceActiveEver = false;
+  if (_pttSilenceTimer) { clearTimeout(_pttSilenceTimer); _pttSilenceTimer = 0; }
   updatePttBtn();
 }
 
-async function _pttStart() {
+async function _pttStart(opts = {}) {
+  _pttMode = opts.mode || 'hold';
   _pttStopPending = false;
+  _pttVoiceActiveEver = false;
   // Se stiamo già registrando o fermando, non riaprire nulla
   if (_pttRecorder || _pttStopping) return;
   const btn = document.getElementById('ptt-btn');
@@ -3017,6 +3024,24 @@ async function _pttStart() {
       const rms = Math.sqrt(sum / buf.length);
       const active = rms > 0.02;
       if (active !== _pttVoiceActive) { _pttVoiceActive = active; updatePttBtn(); }
+      if (active) _pttVoiceActiveEver = true;
+
+      // Auto-stop in modalita' VAD-like: se non c'e' voce per 1.5s, fermati.
+      // Parte solo dopo che l'utente ha parlato almeno una volta (evita
+      // di troncare subito se non ha ancora iniziato a parlare).
+      if (_pttMode === 'auto' && _pttRecorder && !_pttStopping) {
+        if (active) {
+          if (_pttSilenceTimer) { clearTimeout(_pttSilenceTimer); _pttSilenceTimer = 0; }
+        } else if (_pttVoiceActiveEver) {
+          if (!_pttSilenceTimer) {
+            _pttSilenceTimer = setTimeout(() => {
+              if (_pttRecorder && !_pttStopping) {
+                _pttStop();
+              }
+            }, 1500);
+          }
+        }
+      }
       _pttAnalyserRAF = requestAnimationFrame(tick);
     };
     _pttAnalyserRAF = requestAnimationFrame(tick);
@@ -3119,6 +3144,10 @@ function _initPttListeners() {
   const btn = document.getElementById('ptt-btn');
   if (!btn) return;
 
+  // Su mobile: PTT classico (tieni premuto). Su web/desktop: toggle con auto-stop
+  // al silenzio (VAD-like) per evitare di dover cliccare due volte.
+  const _isMobilePtt = () => window.innerWidth <= 600;
+
   // Difesa aggressiva iOS: intercetta TUTTI gli eventi touch con passive:false
   // per impedire al sistema operativo di interpretare il long-press come
   // menu contestuale / selezione / anteprima link.
@@ -3139,10 +3168,20 @@ function _initPttListeners() {
     e.preventDefault();
     e.stopPropagation();
     btn.setPointerCapture(e.pointerId);
-    _pttStart();
+    if (_isMobilePtt()) {
+      // Mobile: push-to-talk classico (start su pressione, stop su rilascio)
+      _pttStart({ mode: 'hold' });
+    } else {
+      // Web/desktop: toggle. Se non sta registrando, avvia. Se sta registrando, ferma.
+      if (_pttRecorder) {
+        _pttStop();
+      } else if (!_pttStopping) {
+        _pttStart({ mode: 'auto' });
+      }
+    }
   });
-  btn.addEventListener('pointerup',     e => { if (CONFIG.pttEnabled) { e.preventDefault(); _pttStop(); } });
-  btn.addEventListener('pointercancel', e => { if (CONFIG.pttEnabled) { e.preventDefault(); _pttStop(); } });
+  btn.addEventListener('pointerup',     e => { if (CONFIG.pttEnabled && _isMobilePtt()) { e.preventDefault(); _pttStop(); } });
+  btn.addEventListener('pointercancel', e => { if (CONFIG.pttEnabled && _isMobilePtt()) { e.preventDefault(); _pttStop(); } });
   // Blocca il menu contestuale nativo (long-press iOS/Android)
   btn.addEventListener('contextmenu', e => e.preventDefault());
   // Blocca il menu di selezione nativo
