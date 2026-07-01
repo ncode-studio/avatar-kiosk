@@ -2018,38 +2018,32 @@ async function handleSayMessage(text) {
 
 async function playTTSAudio(ttsData) {
   if (_isIOS) {
-    // Su iOS: usa <audio> HTML element allegato al DOM (sbloccato in wakeUp durante il gesto).
+    // Su iOS: riproduce via AudioContext (sbloccato in wakeUp durante il gesto).
+    // Funziona in modo affidabile ed evita il problema del routing audio di
+    // <audio> element su alcune versioni iOS.
     try {
       if (_lipAudioCtx?.state === 'suspended') await _lipAudioCtx.resume().catch(() => {});
-      if (_iosAudioSrc) { try { _iosAudioSrc.stop(); } catch(_){} _iosAudioSrc = null; }
-      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} _iosAudioGain = null; }
-
-      const audio = _getIosAudioEl();
-      // Stop eventuale riproduzione in corso
-      try { audio.pause(); } catch(_){}
-      audio.currentTime = 0;
-      // Imposta src (questo trigger un reload del media element)
-      audio.src = `data:audio/mpeg;base64,${ttsData.audio}`;
-      // Volume: mobile 1.6x clampato a 1.0 (HTMLAudio.volume max 1.0),
-      // desktop 1.0. Configurabile via CONFIG.ttsVolume.
-      const baseVol = (window.innerWidth <= 600 ? 1.0 : 1.0);
+      const buf = await _lipAudioCtx.decodeAudioData(_b64ToArrayBuffer(ttsData.audio));
+      if (_iosAudioSrc) { try { _iosAudioSrc.stop(); } catch(_){} }
+      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} }
+      _iosAudioSrc = _lipAudioCtx.createBufferSource();
+      _iosAudioSrc.buffer = buf;
+      // GainNode per alzare il volume su mobile (iOS speaker debole)
+      _iosAudioGain = _lipAudioCtx.createGain();
+      const baseVol = (window.innerWidth <= 600 ? 1.6 : 1.0);
       const userVol = (typeof CONFIG.ttsVolume === 'number' ? CONFIG.ttsVolume : 1.0);
-      audio.volume = Math.min(1.0, baseVol * userVol);
-      state.currentAudio = audio;
+      _iosAudioGain.gain.value = baseVol * userVol;
+      _iosAudioSrc.connect(_iosAudioGain).connect(_lipAudioCtx.destination);
+      state.currentAudio = { pause: () => { try { _iosAudioSrc?.stop(); } catch(_){} }, _ios: true };
+      // Lip sync procedurale (no AudioElement disponibile con AudioBufferSourceNode)
+      startProceduralLipSync();
       await new Promise(resolve => {
-        const done = () => resolve();
-        audio.addEventListener('ended', done, { once: true });
-        audio.addEventListener('error', done, { once: true });
-        // startLipSync per il movimento labiale
-        if (typeof startLipSync === 'function') startLipSync(audio, ttsData.alignment);
-        // play() ritorna una Promise; su iOS puo' rifiutare se non c'e' gesto utente
-        const p = audio.play();
-        if (p && typeof p.catch === 'function') {
-          p.catch(err => { console.warn('[iOS audio] play() rejected:', err); resolve(); });
-        }
+        _iosAudioSrc.onended = resolve;
+        _iosAudioSrc.start(0);
       });
     } catch (e) { console.warn('iOS audio error', e); }
-    if (state.currentAudio === _iosAudioEl) state.currentAudio = null;
+    stopProceduralLipSync();
+    if (state.currentAudio?._ios) state.currentAudio = null;
     return;
   }
   // Desktop: HTMLAudioElement
