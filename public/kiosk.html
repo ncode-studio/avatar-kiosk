@@ -2154,6 +2154,7 @@ function addToHistory(role, text) {
 
 async function processUserInput(text) {
   if (!text?.trim()) return;
+  console.log('[DIAG] processUserInput chiamato, mode:', state.mode, 'micEnabled:', CONFIG.micEnabled, 'pttEnabled:', CONFIG.pttEnabled, 'vad:', !!state.vad, 'wakeRec:', !!state.wakeRecognition);
   state.vad?.pause();
 
   // Nasconde il bubble di benvenuto al primo messaggio
