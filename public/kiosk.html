@@ -2059,7 +2059,12 @@ function _updateMicBtnMode(mode) {
 function setMode(mode) {
   state.mode = mode;
 
-  setMicWaveVisible(CONFIG.micEnabled && (mode === 'recording' || (mode === 'listening' && state.wakeActivated)));
+  if (CONFIG.pttEnabled) {
+    // PTT mode: il mic continuo è disabilitato, mostra/nascondi solo la wave del PTT
+    setMicWaveVisible(false);
+  } else {
+    setMicWaveVisible(CONFIG.micEnabled && (mode === 'recording' || (mode === 'listening' && state.wakeActivated)));
+  }
   setAudioWaveVisible(CONFIG.audioEnabled && mode === 'speaking');
   if (CONFIG.pttEnabled) { updatePttBtn(); }
   _updateMicBtnMode(mode);
@@ -2521,7 +2526,7 @@ function updateMicBtn(viewportW) {
   // Posizionamento centrato su mobile: aggiorna le CSS custom properties
   _repositionMobileButtonsAuto();
   const img = document.getElementById('mic-icon-img');
-  btn.style.display = (CONFIG.micVisible === false) ? 'none' : 'flex';
+  btn.style.display = (CONFIG.micVisible === false || CONFIG.pttEnabled) ? 'none' : 'flex';
   if (CONFIG.micEnabled) {
     btn.style.background  = CONFIG.micBgColor     || 'rgba(34,211,160,.15)';
     btn.style.borderColor = CONFIG.micBorderColor || 'rgba(34,211,160,.5)';
@@ -2777,10 +2782,10 @@ function updatePttBtn(viewportW) {
     btn.style.borderColor = _themeColor(CONFIG.pttBorderColor || CONFIG.micBorderColor, 'rgba(34,211,160,.5)');
     _showWave();
   } else if (mode === 'recording') {
-    // PTT premuto: colore tema + icona (waveform solo se voce rilevata)
+    // PTT premuto: colore tema + waveform continua (l'icona si vede solo prima del press)
     btn.style.background  = _themeColor(CONFIG.pttBgColor  || CONFIG.micBgColor,  'rgba(34,211,160,.15)');
     btn.style.borderColor = _themeColor(CONFIG.pttBorderColor || CONFIG.micBorderColor, 'rgba(34,211,160,.5)');
-    if (_pttVoiceActive || state.wakeActivated) { _showWave(); } else { _showIcon(); }
+    _showWave();
   } else {
     // Idle / thinking: colori normali, icona
     btn.style.background  = CONFIG.pttBgColor || CONFIG.micBgColor || 'rgba(34,211,160,.15)';
@@ -2797,6 +2802,7 @@ let _pttRecorder = null;
 let _pttChunks = [];
 let _pttStartedAt = 0;
 let _pttStopPending = false; // pointerup arrivato prima che _pttStart finisse
+let _pttStopping = false;   // stop già in corso, ignora ulteriori trigger
 let _pttVoiceActive = false; // voce rilevata (RMS) per feedback visivo
 let _pttAnalyserRAF = 0;
 let _pttAnalyser = null; // { ctx, src, an }
@@ -2818,23 +2824,24 @@ function _pttResetVisual() {
   const btn = document.getElementById('ptt-btn');
   if (!btn) return;
   btn.classList.remove('ptt-pressing');
-  btn.style.transform = (window.innerWidth <= 600 ? 'translateX(-50%)' : '');
+  btn.style.transform = ''; // delega al CSS (che ha !important)
   _pttVoiceActive = false;
   updatePttBtn();
 }
 
 async function _pttStart() {
   _pttStopPending = false;
+  // Se stiamo già registrando o fermando, non riaprire nulla
+  if (_pttRecorder || _pttStopping) return;
   const btn = document.getElementById('ptt-btn');
 
   if (state.mode === 'speaking') { stopCurrentAudio(); return; }
   if (state.mode === 'thinking' || state.mode === 'recording') return;
 
-  // Feedback visivo immediato, prima di qualsiasi await
-  if (btn) {
-    btn.classList.add('ptt-pressing');
-    btn.style.transform = (window.innerWidth <= 600 ? 'translateX(-50%) scale(0.95)' : 'scale(0.95)');
-  }
+  // Feedback visivo immediato, prima di qualsiasi await.
+  // Il CSS gestisce transform/color tramite la classe ptt-pressing
+  // (vedi #ptt-btn.ptt-pressing { transform: translateX(-50%) scale(0.92) !important; })
+  if (btn) btn.classList.add('ptt-pressing');
 
   // Se siamo in idle, fare wakeUp per inizializzare la sessione e avviare la wakeword
   const overlay = document.getElementById('idle-overlay');
@@ -2943,13 +2950,14 @@ async function _pttStart() {
     const chunks = _pttChunks;
     _pttChunks = [];
     _pttRecorder = null;
+    _pttStopping = false; // consenti un nuovo start
     const duration = Date.now() - _pttStartedAt;
     if (_pttStream) { try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {} _pttStream = null; }
     if (_pttAnalyserRAF) { cancelAnimationFrame(_pttAnalyserRAF); _pttAnalyserRAF = 0; }
     _pttAnalyser = null;
     _pttResetVisual();
 
-    if (!chunks.length || duration < 250) { setMode('listening'); return; }
+    if (!chunks.length || duration < 150) { setMode('listening'); return; }
 
     const blob = new Blob(chunks, { type: actualMime });
     setMode('thinking');
@@ -2961,6 +2969,7 @@ async function _pttStart() {
     rec.start(250); // chunk ogni 250ms: nessun limite di durata imposto dal browser
   } catch (e) {
     console.warn('[PTT] start errore:', e);
+    _pttStopping = false;
     try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {}
     _pttStream = null;
     _pttResetVisual();
@@ -2972,17 +2981,38 @@ async function _pttStart() {
 }
 
 function _pttStop() {
-  _pttStopPending = false;
-  _pttResetVisual();
-  if (_pttAnalyserRAF) { cancelAnimationFrame(_pttAnalyserRAF); _pttAnalyserRAF = 0; }
+  // Se non c'è recorder attivo e non stiamo fermando: probabilmente pointerup
+  // arrivato prima che _pttStart finisse di inizializzare
   if (!_pttRecorder) {
-    // start non ancora partito: segna stop pending così _pttStart può abortire
     _pttStopPending = true;
     if (_pttStream) { try { _pttStream.getTracks().forEach(t => t.stop()); } catch (_) {} _pttStream = null; }
+    _pttResetVisual();
     setMode('listening');
     return;
   }
-  try { _pttRecorder.stop(); } catch (_) { setMode('listening'); }
+  if (_pttStopping) return;
+  _pttStopping = true;
+  _pttStopPending = false;
+  _pttResetVisual();
+  if (_pttAnalyserRAF) { cancelAnimationFrame(_pttAnalyserRAF); _pttAnalyserRAF = 0; }
+  try { _pttRecorder.stop(); } catch (_) {
+    _pttStopping = false;
+    setMode('listening');
+  }
+}
+
+// Stop di sicurezza: usato SOLO da eventi spuri (blur/visibilitychange).
+// Non interferisce con il flusso pointerdown→pointerup normale.
+function _pttAbort() {
+  if (!_pttRecorder) return;
+  if (_pttStopping) return;
+  _pttStopping = true;
+  _pttStopPending = false;
+  _pttResetVisual();
+  if (_pttAnalyserRAF) { cancelAnimationFrame(_pttAnalyserRAF); _pttAnalyserRAF = 0; }
+  try { _pttRecorder.stop(); } catch (_) {
+    _pttStopping = false;
+  }
 }
 
 function _initPttListeners() {
@@ -2996,20 +3026,12 @@ function _initPttListeners() {
   });
   btn.addEventListener('pointerup',     e => { if (CONFIG.pttEnabled) _pttStop(); });
   btn.addEventListener('pointercancel', e => { if (CONFIG.pttEnabled) _pttStop(); });
-  // Fallback: se il dito esce dal pulsante o il browser rilascia la cattura
-  // senza emettere pointerup (succede su alcuni mobile), forza lo stop
-  btn.addEventListener('lostpointercapture', () => {
-    if (CONFIG.pttEnabled && _pttRecorder) _pttStop();
-  });
-  btn.addEventListener('pointerleave', () => {
-    if (CONFIG.pttEnabled && _pttRecorder) _pttStop();
-  });
-  // safety net globale: se la pagina perde visibilità o focus mentre stiamo registrando
+  // Safety net globale: se la pagina perde visibilità o focus mentre stiamo registrando
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && _pttRecorder) _pttStop();
+    if (document.hidden) _pttAbort();
   });
   window.addEventListener('blur', () => {
-    if (_pttRecorder) _pttStop();
+    _pttAbort();
   });
 
   // In PTT mode blocca il click sull'idle overlay solo se non siamo in idle
@@ -3022,6 +3044,11 @@ function _initPttListeners() {
 }
 
 async function toggleMic() {
+  if (CONFIG.pttEnabled) {
+    // In PTT mode il microfono continuo è disabilitato: usare il pulsante push-to-talk
+    updateMicBtn();
+    return;
+  }
   CONFIG.micEnabled = !CONFIG.micEnabled;
   console.log('[toggleMic] micEnabled:', CONFIG.micEnabled, 'mode:', state.mode, 'wakeAlways:', CONFIG.wakeWordAlwaysRequired, 'wakeRec:', !!state.wakeRecognition);
   updateMicBtn();
@@ -4115,7 +4142,7 @@ function applyParamLive(key, v) {
     audio_border_disabled_color: () => { CONFIG.audioBorderDisabledColor= v; updateAudioBtn(); },
     theme:                () => applyTheme(v),
     touch_stop_speaking:  () => { CONFIG.touchStopSpeaking = v !== 0 && v !== false; },
-    ptt_enabled:    () => { if (!CONFIG._ready) return; CONFIG.pttEnabled = v !== 0 && v !== false; updateMicBtn(); updateAudioBtn(); updatePttBtn(); _repositionMobileButtonsAuto(); },
+    ptt_enabled:    () => { if (!CONFIG._ready) return; CONFIG.pttEnabled = v !== 0 && v !== false; if (CONFIG.pttEnabled) { CONFIG.micEnabled = false; if (state.vad) { try { state.vad.stop(); } catch(_) {} state.vad = null; } if (state.wakeRecognition) { try { state.wakeRecognition.stop(); } catch(_) {} state.wakeRecognition = null; } CONFIG.wakeWordEnabled = false; CONFIG.wakeWordAlwaysRequired = false; } updateMicBtn(); updateAudioBtn(); updatePttBtn(); _repositionMobileButtonsAuto(); },
     ptt_icon:       () => { if (!CONFIG._ready) return; CONFIG.pttIcon       = v; CONFIG._iconTs = Date.now(); updatePttBtn(); },
     ptt_icon_size:  () => { if (!CONFIG._ready) return; CONFIG.pttIconSize   = +v; updatePttBtn(); },
     ptt_icon_x:     () => { if (!CONFIG._ready) return; CONFIG.pttIconX      = +v; updatePttBtn(); },
@@ -4280,9 +4307,12 @@ async function initAvatar() {
     CONFIG.wakeWordAlwaysRequired = !!(cfg.wake_word_always);
     CONFIG.wakeWords = cfg.wake_words || '';
     if (CONFIG.pttEnabled) {
-      // PTT: avvia wakeword se abilitata; idle overlay e controlli seguono il flusso normale
-      if (CONFIG.wakeWordEnabled || CONFIG.wakeWordAlwaysRequired)
-        setTimeout(() => { if (state.mode === 'idle' || state.mode === 'listening') startWakeWord(); }, 500);
+      // PTT mode: wake word e VAD continuo sono disabilitati.
+      // L'ascolto avviene esclusivamente tramite il pulsante push-to-talk.
+      CONFIG.wakeWordEnabled = false;
+      CONFIG.wakeWordAlwaysRequired = false;
+      CONFIG.micEnabled = false;
+      updateMicBtn();
     } else if (CONFIG.idleDisabled) {
       // Casi 1,2,3: mostra chat subito, avvia sessione al primo gesto o dopo 600ms
       document.getElementById('idle-overlay').classList.add('hidden');
