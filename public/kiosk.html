@@ -2039,6 +2039,11 @@ async function playTTSAudio(ttsData) {
         const done = () => resolve();
         audio.addEventListener('ended', done, { once: true });
         audio.addEventListener('error', done, { once: true });
+        // Safety timeout: se ended/error non scattano in 60s, risolvi comunque
+        const safetyTimeout = setTimeout(done, 60000);
+        const clearSafety = () => clearTimeout(safetyTimeout);
+        audio.addEventListener('ended', clearSafety, { once: true });
+        audio.addEventListener('error', clearSafety, { once: true });
         // startLipSync per il movimento labiale (usa currentTime del <audio>)
         if (typeof startLipSync === 'function') startLipSync(audio, ttsData.alignment);
         const p = audio.play();
@@ -3386,6 +3391,22 @@ async function wakeUp(forceGreeting = false) {
     const src = _lipAudioCtx.createBufferSource();
     src.buffer = buf; src.connect(_lipAudioCtx.destination); src.start(0);
   } catch (_) {}
+
+  // Su iOS: sblocca la sessione audio per <audio> element (necessario per
+  // riprodurre TTS successivamente). play() silent + pause() durante il gesto.
+  if (_isIOS) {
+    try {
+      const el = _getIosAudioEl();
+      const prevSrc = el.src;
+      el.src = ''; // forza reload
+      // Crea un blob silent di 0.05s e riproducilo per sbloccare la sessione
+      el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+      await el.play().catch(() => {});
+      el.pause();
+      el.currentTime = 0;
+      el.src = prevSrc;
+    } catch (_) {}
+  }
 
   // Avvia VAD solo se il mic è abilitato (non riabilitare mai se l'utente l'ha spento)
   if (CONFIG.micEnabled) {
