@@ -2018,39 +2018,58 @@ async function handleSayMessage(text) {
 
 async function playTTSAudio(ttsData) {
   if (_isIOS) {
-    // Su iOS: usa <audio> HTML element (allegato al DOM). Funziona in modo
-    // affidabile su iOS Safari, evita il problema del decodeAudioData che
-    // non supporta mp3, e indirizza sull'altoparlante principale.
+    // Su iOS: usa AudioContext + MediaElementAudioSourceNode collegato a GainNode.
+    // Questo bypassa decodeAudioData (che non supporta mp3 su Safari iOS)
+    // e instrada l'audio sull'altoparlante principale tramite destination.
     try {
-      if (_lipAudioCtx?.state === 'suspended') await _lipAudioCtx.resume().catch(() => {});
-      if (_iosAudioSrc) { try { _iosAudioSrc.stop(); } catch(_){} _iosAudioSrc = null; }
-      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} _iosAudioGain = null; }
+      if (!_lipAudioCtx) _lipAudioCtx = new AudioContext();
+      if (_lipAudioCtx.state === 'suspended') await _lipAudioCtx.resume().catch(() => {});
 
+      // Cleanup precedente
+      if (_iosAudioSrc) { try { _iosAudioSrc.disconnect(); } catch(_){} }
+      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} }
+
+      // <audio> nascosto usato SOLO come decoder mp3 (non viene riprodotto direttamente)
       const audio = _getIosAudioEl();
       try { audio.pause(); } catch(_){}
       audio.currentTime = 0;
       audio.src = `data:audio/mpeg;base64,${ttsData.audio}`;
-      // HTMLAudio.volume e' clampato [0,1]; il guadagno reale viene da qui.
-      // Su iOS l'altoparlante e' piu' debole, quindi andiamo al massimo.
+      // Attendi che l'audio sia caricato
+      await new Promise((resolve) => {
+        if (audio.readyState >= 2) return resolve();
+        audio.addEventListener('loadeddata', resolve, { once: true });
+        audio.addEventListener('error', resolve, { once: true });
+        setTimeout(resolve, 3000); // safety
+      });
+
+      // Crea la catena: <audio> -> MediaElementSource -> GainNode -> destination
+      const src = _lipAudioCtx.createMediaElementSource(audio);
+      const gain = _lipAudioCtx.createGain();
+      const baseVol = (window.innerWidth <= 600 ? 1.6 : 1.0);
       const userVol = (typeof CONFIG.ttsVolume === 'number' ? CONFIG.ttsVolume : 1.0);
-      audio.volume = Math.min(1.0, userVol);
-      state.currentAudio = audio;
+      gain.gain.value = baseVol * userVol;
+      src.connect(gain).connect(_lipAudioCtx.destination);
+      _iosAudioSrc = src;
+      _iosAudioGain = gain;
+
+      state.currentAudio = { pause: () => { try { audio.pause(); } catch(_){} }, _ios: true };
+      // Lip sync procedurale (non abbiamo accesso diretto a currentTime dell'element con MediaElementSource)
+      startProceduralLipSync();
+
       await new Promise(resolve => {
         const done = () => resolve();
         audio.addEventListener('ended', done, { once: true });
         audio.addEventListener('error', done, { once: true });
-        // Safety timeout: se ended/error non scattano in 60s, risolvi comunque
         const safetyTimeout = setTimeout(done, 60000);
         const clearSafety = () => clearTimeout(safetyTimeout);
         audio.addEventListener('ended', clearSafety, { once: true });
         audio.addEventListener('error', clearSafety, { once: true });
-        // startLipSync per il movimento labiale (usa currentTime del <audio>)
-        if (typeof startLipSync === 'function') startLipSync(audio, ttsData.alignment);
         const p = audio.play();
         if (p && typeof p.catch === 'function') p.catch(err => { console.warn('[iOS audio] play() rejected:', err); resolve(); });
       });
+      stopProceduralLipSync();
     } catch (e) { console.warn('iOS audio error', e); }
-    if (state.currentAudio === _iosAudioEl) state.currentAudio = null;
+    if (state.currentAudio?._ios) state.currentAudio = null;
     return;
   }
   // Desktop: HTMLAudioElement
