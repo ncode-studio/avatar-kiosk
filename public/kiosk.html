@@ -2018,24 +2018,14 @@ async function handleSayMessage(text) {
 
 async function playTTSAudio(ttsData) {
   if (_isIOS) {
-    // Su iOS: <audio> element con controls (anche se nascosti) e webkit-playsinline.
-    // L'attributo controls e' fondamentale su iOS Safari per forzare il routing
-    // sull'altoparlante principale invece che sulla capsula earpiece.
+    // Su iOS: riusa l'<audio> pre-warmato (sessione audio gia' sbloccata
+    // dal primo pointerdown sulla pagina). Cambia solo src e play().
     try {
       if (_lipAudioCtx?.state === 'suspended') await _lipAudioCtx.resume().catch(() => {});
 
-      // Cleanup precedente
-      if (_iosAudioSrc) { try { _iosAudioSrc.disconnect(); } catch(_){} _iosAudioSrc = null; }
-      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} _iosAudioGain = null; }
-
-      // Crea <audio> con controls (anche invisibile) per forzare routing speaker
-      const audio = document.createElement('audio');
-      audio.preload = 'auto';
-      audio.setAttribute('webkit-playsinline', 'true');
-      audio.setAttribute('x-webkit-airplay', 'allow');
-      audio.controls = true; // forza routing speaker su iOS
-      audio.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
-      document.body.appendChild(audio);
+      const audio = _getIosAudioEl();
+      try { audio.pause(); } catch(_){}
+      audio.currentTime = 0;
       audio.src = `data:audio/mpeg;base64,${ttsData.audio}`;
 
       // Attendi caricamento
@@ -2047,10 +2037,8 @@ async function playTTSAudio(ttsData) {
         setTimeout(resolve, 3000);
       });
 
-      // Volume 1.0 (default), GainNode non applicabile senza MediaElementSource
       const userVol = (typeof CONFIG.ttsVolume === 'number' ? CONFIG.ttsVolume : 1.0);
       audio.volume = Math.min(1.0, userVol);
-
       state.currentAudio = { pause: () => { try { audio.pause(); } catch(_){} }, _ios: true };
       if (typeof startLipSync === 'function') startLipSync(audio, ttsData.alignment);
 
@@ -2065,9 +2053,6 @@ async function playTTSAudio(ttsData) {
         const p = audio.play();
         if (p && typeof p.catch === 'function') p.catch(err => { console.warn('[iOS audio] play() rejected:', err); resolve(); });
       });
-
-      // Cleanup
-      try { audio.remove(); } catch(_){}
     } catch (e) { console.warn('iOS audio error', e); }
     if (state.currentAudio?._ios) state.currentAudio = null;
     return;
@@ -3203,6 +3188,25 @@ function _initPttListeners() {
   // Su mobile: PTT classico (tieni premuto). Su web/desktop: toggle con auto-stop
   // al silenzio (VAD-like) per evitare di dover cliccare due volte.
   const _isMobilePtt = () => window.innerWidth <= 600;
+
+  // Warm-up audio: al primo pointerdown/click sulla pagina, sblocca la sessione
+  // audio iOS/Android facendo play()+pause() su un <audio> silent. Senza questo,
+  // i successivi play() chiamati dopo diversi secondi (TTS async) vengono
+  // rifiutati per mancanza di user gesture.
+  let _audioWarmedUp = false;
+  const _warmUpAudio = () => {
+    if (_audioWarmedUp) return;
+    _audioWarmedUp = true;
+    try {
+      const a = _getIosAudioEl();
+      // Blob WAV silent di 0.1s (header 44 byte + 0 sample)
+      a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+      a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
+    } catch (_) {}
+  };
+  document.addEventListener('pointerdown', _warmUpAudio, { capture: true, once: false });
+  document.addEventListener('touchstart',   _warmUpAudio, { capture: true, once: false, passive: true });
+  document.addEventListener('click',        _warmUpAudio, { capture: true, once: false });
 
   // Difesa aggressiva iOS: intercetta TUTTI gli eventi touch con passive:false
   // per impedire al sistema operativo di interpretare il long-press come
