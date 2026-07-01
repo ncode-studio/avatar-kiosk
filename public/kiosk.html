@@ -3048,6 +3048,17 @@ async function _pttStart(opts = {}) {
     return;
   }
 
+  // Warm-up audio per i successivi TTS: ora che il mic e' attivo,
+  // sblocca anche la sessione audio speaker con un blob silent.
+  // Senza questo, play() sul TTS arriva rifiutato per mancanza di user gesture.
+  try {
+    if (_isIOS || /Android/i.test(navigator.userAgent)) {
+      const a = _getIosAudioEl();
+      a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+      a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
+    }
+  } catch (_) {}
+
   // AnalyserNode per feedback waveform live (RMS sullo stream)
   try {
     const ctx = _lipAudioCtx || (_lipAudioCtx = new AudioContext());
@@ -3189,24 +3200,25 @@ function _initPttListeners() {
   // al silenzio (VAD-like) per evitare di dover cliccare due volte.
   const _isMobilePtt = () => window.innerWidth <= 600;
 
-  // Warm-up audio: al primo pointerdown/click sulla pagina, sblocca la sessione
-  // audio iOS/Android facendo play()+pause() su un <audio> silent. Senza questo,
-  // i successivi play() chiamati dopo diversi secondi (TTS async) vengono
-  // rifiutati per mancanza di user gesture.
+  // Warm-up audio: al primo click sulla pagina (escluso il PTT button),
+  // sblocca la sessione audio iOS/Android facendo play()+pause() su un
+  // <audio> silent. Senza questo, i successivi play() chiamati dopo
+  // diversi secondi (TTS async) vengono rifiutati per mancanza di user gesture.
+  // IMPORTANTE: non warm-up durante pointerdown del PTT perche' confligge
+  // con getUserMedia (iOS rifiuta il microfono se c'e' un consumer audio attivo).
   let _audioWarmedUp = false;
-  const _warmUpAudio = () => {
+  const _warmUpAudio = (e) => {
     if (_audioWarmedUp) return;
+    // Skip se il click e' sul PTT button (sara' lui a fare warm-up dopo getUserMedia)
+    if (e?.target?.id === 'ptt-btn' || e?.target?.closest?.('#ptt-btn')) return;
     _audioWarmedUp = true;
     try {
       const a = _getIosAudioEl();
-      // Blob WAV silent di 0.1s (header 44 byte + 0 sample)
       a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
       a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
     } catch (_) {}
   };
-  document.addEventListener('pointerdown', _warmUpAudio, { capture: true, once: false });
-  document.addEventListener('touchstart',   _warmUpAudio, { capture: true, once: false, passive: true });
-  document.addEventListener('click',        _warmUpAudio, { capture: true, once: false });
+  document.addEventListener('click', _warmUpAudio, { capture: true, once: false });
 
   // Difesa aggressiva iOS: intercetta TUTTI gli eventi touch con passive:false
   // per impedire al sistema operativo di interpretare il long-press come
