@@ -2893,10 +2893,10 @@ function updatePttBtn(viewportW) {
     btn.style.borderColor = _themeColor(CONFIG.pttBorderColor || CONFIG.micBorderColor, 'rgba(34,211,160,.5)');
     _showWave();
   } else if (mode === 'recording') {
-    // PTT premuto: colore tema + waveform continua (l'icona si vede solo prima del press)
+    // PTT premuto: colore tema. Wave SOLO se voce effettivamente rilevata.
     btn.style.background  = _themeColor(CONFIG.pttBgColor  || CONFIG.micBgColor,  'rgba(34,211,160,.15)');
     btn.style.borderColor = _themeColor(CONFIG.pttBorderColor || CONFIG.micBorderColor, 'rgba(34,211,160,.5)');
-    _showWave();
+    if (_pttVoiceActive) _showWave(); else _showIcon();
   } else {
     // Idle / thinking: colori normali, icona
     btn.style.background  = CONFIG.pttBgColor || CONFIG.micBgColor || 'rgba(34,211,160,.15)';
