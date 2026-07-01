@@ -2021,28 +2021,36 @@ async function playTTSAudio(ttsData) {
     // Su iOS: usa AudioContext + MediaElementAudioSourceNode collegato a GainNode.
     // Questo bypassa decodeAudioData (che non supporta mp3 su Safari iOS)
     // e instrada l'audio sull'altoparlante principale tramite destination.
+    // Crea un <audio> NUOVO ogni volta perche' MediaElementSource puo' essere
+    // creato una sola volta per elemento.
     try {
       if (!_lipAudioCtx) _lipAudioCtx = new AudioContext();
       if (_lipAudioCtx.state === 'suspended') await _lipAudioCtx.resume().catch(() => {});
 
-      // Cleanup precedente
-      if (_iosAudioSrc) { try { _iosAudioSrc.disconnect(); } catch(_){} }
-      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} }
+      // Cleanup catena precedente
+      if (_iosAudioSrc) { try { _iosAudioSrc.disconnect(); } catch(_){} _iosAudioSrc = null; }
+      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} _iosAudioGain = null; }
 
-      // <audio> nascosto usato SOLO come decoder mp3 (non viene riprodotto direttamente)
-      const audio = _getIosAudioEl();
-      try { audio.pause(); } catch(_){}
-      audio.currentTime = 0;
+      // Crea <audio> nuovo, non collegato a destination (solo decoder mp3)
+      const audio = document.createElement('audio');
+      audio.preload = 'auto';
+      audio.setAttribute('playsinline', '');
+      audio.setAttribute('webkit-playsinline', '');
+      audio.setAttribute('x-webkit-airplay', 'allow');
+      audio.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+      document.body.appendChild(audio);
       audio.src = `data:audio/mpeg;base64,${ttsData.audio}`;
-      // Attendi che l'audio sia caricato
+
+      // Attendi caricamento
       await new Promise((resolve) => {
         if (audio.readyState >= 2) return resolve();
         audio.addEventListener('loadeddata', resolve, { once: true });
         audio.addEventListener('error', resolve, { once: true });
-        setTimeout(resolve, 3000); // safety
+        audio.addEventListener('canplay', resolve, { once: true });
+        setTimeout(resolve, 3000);
       });
 
-      // Crea la catena: <audio> -> MediaElementSource -> GainNode -> destination
+      // Catena: <audio> -> MediaElementSource -> GainNode -> destination
       const src = _lipAudioCtx.createMediaElementSource(audio);
       const gain = _lipAudioCtx.createGain();
       const baseVol = (window.innerWidth <= 600 ? 1.6 : 1.0);
@@ -2053,7 +2061,6 @@ async function playTTSAudio(ttsData) {
       _iosAudioGain = gain;
 
       state.currentAudio = { pause: () => { try { audio.pause(); } catch(_){} }, _ios: true };
-      // Lip sync procedurale (non abbiamo accesso diretto a currentTime dell'element con MediaElementSource)
       startProceduralLipSync();
 
       await new Promise(resolve => {
@@ -2068,6 +2075,11 @@ async function playTTSAudio(ttsData) {
         if (p && typeof p.catch === 'function') p.catch(err => { console.warn('[iOS audio] play() rejected:', err); resolve(); });
       });
       stopProceduralLipSync();
+
+      // Cleanup
+      try { src.disconnect(); } catch(_){}
+      try { gain.disconnect(); } catch(_){}
+      try { audio.remove(); } catch(_){}
     } catch (e) { console.warn('iOS audio error', e); }
     if (state.currentAudio?._ios) state.currentAudio = null;
     return;
@@ -3410,22 +3422,6 @@ async function wakeUp(forceGreeting = false) {
     const src = _lipAudioCtx.createBufferSource();
     src.buffer = buf; src.connect(_lipAudioCtx.destination); src.start(0);
   } catch (_) {}
-
-  // Su iOS: sblocca la sessione audio per <audio> element (necessario per
-  // riprodurre TTS successivamente). play() silent + pause() durante il gesto.
-  if (_isIOS) {
-    try {
-      const el = _getIosAudioEl();
-      const prevSrc = el.src;
-      el.src = ''; // forza reload
-      // Crea un blob silent di 0.05s e riproducilo per sbloccare la sessione
-      el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-      await el.play().catch(() => {});
-      el.pause();
-      el.currentTime = 0;
-      el.src = prevSrc;
-    } catch (_) {}
-  }
 
   // Avvia VAD solo se il mic è abilitato (non riabilitare mai se l'utente l'ha spento)
   if (CONFIG.micEnabled) {
