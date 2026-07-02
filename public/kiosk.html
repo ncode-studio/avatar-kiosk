@@ -3090,7 +3090,11 @@ async function _pttStart(opts = {}) {
   if (_pttRecorder || _pttStopping) return;
   const btn = document.getElementById('ptt-btn');
 
-  if (state.mode === 'speaking') { stopCurrentAudio(); return; }
+  if (state.mode === 'speaking') {
+    // Barge-in: ferma l'audio dell'avatar e procedi con la registrazione
+    stopCurrentAudio();
+    setMode('listening'); // evita che il check successivo blocchi
+  }
   if (state.mode === 'thinking' || state.mode === 'recording') return;
 
   // Feedback visivo immediato, prima di qualsiasi await.
