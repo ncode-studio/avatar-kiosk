@@ -2179,15 +2179,27 @@ async function playTTSAudio(ttsData) {
       if (typeof startLipSync === 'function') startLipSync(audio, ttsData.alignment);
 
       await new Promise(resolve => {
-        const done = () => resolve();
+        let resolved = false;
+        const done = () => { if (!resolved) { resolved = true; resolve(); } };
         audio.addEventListener('ended', done, { once: true });
         audio.addEventListener('error', done, { once: true });
         const safetyTimeout = setTimeout(done, 60000);
         const clearSafety = () => clearTimeout(safetyTimeout);
         audio.addEventListener('ended', clearSafety, { once: true });
         audio.addEventListener('error', clearSafety, { once: true });
+        // Polling: se stopCurrentAudio setta state.currentAudio = null, esci subito
+        const poll = setInterval(() => {
+          if (!state.currentAudio) { clearInterval(poll); done(); }
+        }, 100);
+        // Quando audio finisce naturalmente, ferma anche il polling
+        const origDone = done;
+        const stop = () => { clearInterval(poll); origDone(); };
+        audio.removeEventListener('ended', done);
+        audio.addEventListener('ended', stop, { once: true });
+        audio.removeEventListener('error', done);
+        audio.addEventListener('error', stop, { once: true });
         const p = audio.play();
-        if (p && typeof p.catch === 'function') p.catch(err => { console.warn('[iOS audio] play() rejected:', err); resolve(); });
+        if (p && typeof p.catch === 'function') p.catch(err => { console.warn('[iOS audio] play() rejected:', err); stop(); });
       });
     } catch (e) { console.warn('iOS audio error', e); }
     if (state.currentAudio?._ios) state.currentAudio = null;
@@ -2552,6 +2564,7 @@ document.getElementById('text-input').addEventListener('keydown', e => {
 function stopCurrentAudio() {
   stopProceduralLipSync();
   anim.lipTarget = 0;
+  console.log('[DIAG] stopCurrentAudio chiamato, currentAudio:', state.currentAudio ? 'presente' : 'null');
   if (state.currentAudio) {
     state.currentAudio.pause();
     // dispatchEvent esiste solo su HTMLAudioElement; il wrapper iOS ({pause,_ios:true}) no
