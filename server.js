@@ -1149,14 +1149,24 @@ async function mcpCallTool(url, headers, name, args) {
 
   // JSON-RPC diretto — initialize (con session), poi tools/call
   const postJson = async (body, extraHeaders = {}) => {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { ...jsonHeaders, ...extraHeaders },
-      body: JSON.stringify(body),
-    });
-    const text = await r.text();
-    if (!r.ok) throw new Error(`MCP HTTP ${r.status}: ${text.slice(0, 300)}`);
-    return { data: JSON.parse(text), sessionId: r.headers.get('mcp-session-id') };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { ...jsonHeaders, ...extraHeaders },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const text = await r.text();
+      if (!r.ok) throw new Error(`MCP HTTP ${r.status}: ${text.slice(0, 300)}`);
+      return { data: JSON.parse(text), sessionId: r.headers.get('mcp-session-id') };
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error('MCP timeout dopo 60s');
+      throw e;
+    } finally {
+      clearTimeout(timeout);
+    }
   };
 
   try {
