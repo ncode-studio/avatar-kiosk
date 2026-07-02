@@ -797,9 +797,10 @@
       width: 160px;
       height: 160px;
       margin: -80px 0 0 -80px;
-      border: 3px solid var(--accent);
+      border: 4px solid var(--accent);
       border-radius: 50%;
       opacity: 0;
+      box-shadow: 0 0 20px var(--accent), inset 0 0 20px var(--accent);
       animation: ptt-ring 2.4s ease-out infinite;
     }
     .ptt-listening-ring-2 { animation-delay: 0.8s; }
@@ -2052,6 +2053,7 @@ let _lipAudioCtx = null;
 let _iosAudioSrc = null;
 let _iosAudioGain = null;
 let _iosAudioEl = null;        // <audio> element riusato su iOS (allegato al DOM)
+let _iosAudioChain = false;    // catena AudioContext creata una volta sola
 const _isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 // Crea un <audio> off-screen, lo allega al DOM, e lo riusa per ogni TTS.
@@ -2108,14 +2110,13 @@ async function handleSayMessage(text) {
 
 async function playTTSAudio(ttsData) {
   if (_isIOS) {
-    // Su iOS: riusa l'<audio> pre-warmato + GainNode via MediaElementSource
-    // per amplificare il volume sopra 1.0 (HTMLAudio.volume e' clampato).
+    // Su iOS: riusa l'<audio> pre-warmato + catena MediaElementSource -> GainNode
+    // per amplificare il volume sopra 1.0. La catena AudioContext viene creata
+    // una volta sola (MediaElementSource non puo' essere creato piu' volte sullo
+    // stesso elemento). I successivi TTS cambiano solo src e play().
     try {
-      if (_lipAudioCtx?.state === 'suspended') await _lipAudioCtx.resume().catch(() => {});
-
-      // Cleanup catena precedente
-      if (_iosAudioSrc) { try { _iosAudioSrc.disconnect(); } catch(_){} _iosAudioSrc = null; }
-      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} _iosAudioGain = null; }
+      if (!_lipAudioCtx) _lipAudioCtx = new AudioContext();
+      if (_lipAudioCtx.state === 'suspended') await _lipAudioCtx.resume().catch(() => {});
 
       const audio = _getIosAudioEl();
       try { audio.pause(); } catch(_){}
@@ -2131,20 +2132,20 @@ async function playTTSAudio(ttsData) {
         setTimeout(resolve, 3000);
       });
 
-      // Catena: <audio> -> MediaElementSource -> GainNode -> destination
-      // MediaElementSource puo' essere creato una sola volta per elemento,
-      // ma _iosAudioEl e' riusato (pre-warmato) e non ha mai avuto MediaElementSource.
-      const src = _lipAudioCtx.createMediaElementSource(audio);
-      const gain = _lipAudioCtx.createGain();
-      // Mobile 2.5x, desktop 1.0
-      const baseVol = (window.innerWidth <= 600 ? 2.5 : 1.0);
-      const userVol = (typeof CONFIG.ttsVolume === 'number' ? CONFIG.ttsVolume : 1.0);
-      gain.gain.value = baseVol * userVol;
-      src.connect(gain).connect(_lipAudioCtx.destination);
-      _iosAudioSrc = src;
-      _iosAudioGain = gain;
+      // Crea la catena AudioContext SOLO la prima volta
+      if (!_iosAudioChain) {
+        const src = _lipAudioCtx.createMediaElementSource(audio);
+        const gain = _lipAudioCtx.createGain();
+        const baseVol = (window.innerWidth <= 600 ? 2.5 : 1.0);
+        const userVol = (typeof CONFIG.ttsVolume === 'number' ? CONFIG.ttsVolume : 1.0);
+        gain.gain.value = baseVol * userVol;
+        src.connect(gain).connect(_lipAudioCtx.destination);
+        _iosAudioSrc = src;
+        _iosAudioGain = gain;
+        _iosAudioChain = true;
+      }
 
-      audio.volume = 1.0; // volume massimo dell'<audio>, amplifica via GainNode
+      audio.volume = 1.0;
       state.currentAudio = { pause: () => { try { audio.pause(); } catch(_){} }, _ios: true };
       if (typeof startLipSync === 'function') startLipSync(audio, ttsData.alignment);
 
