@@ -1851,6 +1851,32 @@
                   oninput="sendToPreview({type:'idleParam',key:'idle_hint',value:this.value})"/>
               </div>
             </div>
+
+            <!-- Privacy: link + testo fullscreen -->
+            <div class="section" style="margin-top:20px">
+              <div class="section-header" onclick="toggleSection(this)">
+                <span class="section-arrow">▸</span>
+                <span>🔒 Privacy & link</span>
+              </div>
+              <div class="section-body">
+                <div class="field">
+                  <label>Testo del link (idle)</label>
+                  <input type="text" id="f-privacy-link-text" placeholder="Privacy policy"
+                    oninput="sendToPreview({type:'avatarParam',key:'privacy_link_text',value:this.value})"/>
+                </div>
+                <div class="field">
+                  <label>URL Privacy (opzionale)</label>
+                  <input type="text" id="f-privacy-link-url" placeholder="https://..."
+                    oninput="sendToPreview({type:'avatarParam',key:'privacy_link_url',value:this.value})"/>
+                </div>
+                <div class="field">
+                  <label>Testo privacy fullscreen</label>
+                  <textarea id="f-privacy-text" rows="6" style="width:100%;font-family:inherit;resize:vertical"
+                    placeholder="Testo mostrato nel popup fullscreen quando l'utente clicca sul link privacy..."
+                    oninput="sendToPreview({type:'avatarParam',key:'privacy_text',value:this.value})"></textarea>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2451,6 +2477,9 @@ function selectAvatar(id) {
   document.getElementById('s-idle-font-size').value         = idleFontSize;
   document.getElementById('val-idle-font-size').textContent = idleFontSize.toFixed(2);
   document.getElementById('f-idle-disabled').checked     = (a.idle_disabled     ?? 0) !== 0;
+  document.getElementById('f-privacy-link-text').value  = a.privacy_link_text || '';
+  document.getElementById('f-privacy-link-url').value   = a.privacy_link_url  || '';
+  document.getElementById('f-privacy-text').value       = a.privacy_text      || '';
   document.getElementById('f-wake-word-enabled').checked = (a.wake_word_enabled ?? 0) !== 0;
   document.getElementById('f-wake-word-always').checked  = (a.wake_word_always  ?? 0) !== 0;
   document.getElementById('f-wake-words').value          = a.wake_words || '';
@@ -3001,6 +3030,9 @@ async function saveAvatar() {
     idle_hint:       document.getElementById('f-idle-hint').value,
     idle_font:       document.getElementById('f-idle-font').value,
     idle_font_size:  parseFloat(document.getElementById('s-idle-font-size').value),
+    privacy_link_text: document.getElementById('f-privacy-link-text').value,
+    privacy_link_url:  document.getElementById('f-privacy-link-url').value,
+    privacy_text:      document.getElementById('f-privacy-text').value,
     idle_bg_color:       document.getElementById('f-idle-bg-color').dataset.active === '1'
                            ? document.getElementById('f-idle-bg-color').value : '',
     idle_bg_color_alpha: parseInt(document.getElementById('s-idle-bg-color-alpha').value) / 100,

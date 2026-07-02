@@ -539,6 +539,68 @@
       animation: float 2s ease-in-out infinite;
     }
 
+    /* Link privacy nell'overlay idle */
+    .idle-privacy-link {
+      display: inline-block;
+      margin-top: 20px;
+      font-size: calc(var(--idle-font-size) * 0.8);
+      color: var(--accent2);
+      text-decoration: underline;
+      opacity: 0.85;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .idle-privacy-link:hover { opacity: 1; }
+
+    /* Popup privacy fullscreen */
+    .privacy-popup {
+      position: fixed;
+      inset: 0;
+      z-index: 100000;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      font-family: var(--idle-font-family);
+      color: var(--text);
+      animation: privacy-fade-in 0.2s ease-out;
+    }
+    .privacy-popup-header {
+      display: flex;
+      justify-content: flex-end;
+      padding: 16px 20px;
+      flex-shrink: 0;
+    }
+    .privacy-popup-close {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      font-size: 1.6rem;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .privacy-popup-close:hover { background: var(--surface2); }
+    .privacy-popup-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 32px 40px;
+      font-size: 1rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      max-width: 800px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    @keyframes privacy-fade-in {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
     /* ─── Animazioni ────────────────────────────────── */
     @keyframes ring-pulse {
       0%, 100% { transform: translateX(-50%) scale(1);    opacity: 1; }
@@ -1056,6 +1118,15 @@
     <h2 id="idle-title"></h2>
     <p id="idle-subtitle"></p>
     <div class="tap-hint" id="idle-hint"></div>
+    <a id="idle-privacy-link" class="idle-privacy-link" style="display:none" onclick="event.stopPropagation(); openPrivacyPopup();">Privacy policy</a>
+  </div>
+
+  <!-- Popup privacy fullscreen -->
+  <div id="privacy-popup" class="privacy-popup" style="display:none">
+    <div class="privacy-popup-header">
+      <button class="privacy-popup-close" onclick="closePrivacyPopup()" aria-label="Chiudi">×</button>
+    </div>
+    <div class="privacy-popup-content" id="privacy-popup-content"></div>
   </div>
 
 </div>
@@ -2575,6 +2646,24 @@ function stopCurrentAudio() {
   }
   // Aggiorna subito il bottone PTT per nascondere la wave (l'audio non sta piu' suonando)
   if (CONFIG.pttEnabled && typeof updatePttBtn === 'function') updatePttBtn();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PRIVACY POPUP
+// ═══════════════════════════════════════════════════════════════════════════
+function openPrivacyPopup() {
+  const popup = document.getElementById('privacy-popup');
+  const content = document.getElementById('privacy-popup-content');
+  if (!popup || !content) return;
+  // Renderizza il testo: supporta Markdown leggero o testo semplice
+  const text = CONFIG.privacyText || 'Nessun testo privacy configurato.';
+  content.textContent = text;
+  popup.style.display = 'flex';
+  content.scrollTop = 0;
+}
+function closePrivacyPopup() {
+  const popup = document.getElementById('privacy-popup');
+  if (popup) popup.style.display = 'none';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4455,6 +4544,9 @@ function applyIdleParam(key, value) {
         if (d.idle_bg_opacity !== undefined) applyIdleParam('idle_bg_opacity', d.idle_bg_opacity);
         if (d.idle_font       !== undefined) applyIdleParam('idle_font',       d.idle_font);
         if (d.idle_font_size  !== undefined) applyIdleParam('idle_font_size',  d.idle_font_size);
+        if (d.privacy_link_text !== undefined) applyParamLive('privacy_link_text', d.privacy_link_text);
+        if (d.privacy_link_url  !== undefined) applyParamLive('privacy_link_url',  d.privacy_link_url);
+        if (d.privacy_text      !== undefined) applyParamLive('privacy_text',      d.privacy_text);
         if (d.vad_threshold           !== undefined) applyParamLive('vad_threshold',           d.vad_threshold);
         if (d.vad_silence_duration    !== undefined) applyParamLive('vad_silence_duration',    d.vad_silence_duration);
         if (d.vad_min_speech_duration !== undefined) applyParamLive('vad_min_speech_duration', d.vad_min_speech_duration);
@@ -4613,6 +4705,16 @@ function applyParamLive(key, v) {
     ptt_icon_y:     () => { if (!CONFIG._ready) return; CONFIG.pttIconY      = +v; updatePttBtn(); },
     ptt_bg_color:     () => { if (!CONFIG._ready) return; CONFIG.pttBgColor    = v; updatePttBtn(); },
     ptt_border_color: () => { if (!CONFIG._ready) return; CONFIG.pttBorderColor = v; updatePttBtn(); },
+    privacy_link_text: () => {
+      CONFIG.privacyLinkText = v;
+      const link = document.getElementById('idle-privacy-link');
+      if (link) {
+        if (v) { link.textContent = v; link.style.display = 'inline-block'; }
+        else link.style.display = 'none';
+      }
+    },
+    privacy_link_url: () => { CONFIG.privacyLinkUrl = v; },
+    privacy_text: () => { CONFIG.privacyText = v; },
   };
 
   map[key]?.();
@@ -4761,6 +4863,29 @@ async function initAvatar() {
     applyIdleParam('idle_video',     cfg.idle_video     || '');
     applyIdleParam('idle_bg_image',       cfg.idle_bg_image       || '');
     CONFIG._idleBgColorAlpha = cfg.idle_bg_color_alpha ?? 1;
+
+    // Privacy: link + testo
+    CONFIG.privacyLinkText = cfg.privacy_link_text || '';
+    CONFIG.privacyLinkUrl  = cfg.privacy_link_url  || '';
+    CONFIG.privacyText     = cfg.privacy_text      || '';
+    const privacyLink = document.getElementById('idle-privacy-link');
+    if (privacyLink) {
+      if (CONFIG.privacyLinkText) {
+        privacyLink.textContent = CONFIG.privacyLinkText;
+        privacyLink.style.display = 'inline-block';
+        // Se c'è un URL, al click apri quello; altrimenti apri il popup locale
+        privacyLink.onclick = (e) => {
+          e.stopPropagation();
+          if (CONFIG.privacyLinkUrl) {
+            window.open(CONFIG.privacyLinkUrl, '_blank', 'noopener');
+          } else {
+            openPrivacyPopup();
+          }
+        };
+      } else {
+        privacyLink.style.display = 'none';
+      }
+    }
     applyIdleParam('idle_bg_color',       cfg.idle_bg_color       || '');
     applyIdleParam('idle_bg_opacity',     cfg.idle_bg_opacity     ?? 1);
     applyIdleParam('idle_font',      cfg.idle_font      || '');

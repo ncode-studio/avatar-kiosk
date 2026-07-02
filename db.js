@@ -341,6 +341,14 @@ if (!existing.includes('startup_api_body'))
 if (!existing.includes('startup_api_output_field'))
   db.exec("ALTER TABLE avatars ADD COLUMN startup_api_output_field TEXT DEFAULT ''")
 
+// Privacy: link + testo fullscreen mostrato in idle
+if (!existing.includes('privacy_link_text'))
+  db.exec("ALTER TABLE avatars ADD COLUMN privacy_link_text TEXT DEFAULT ''")
+if (!existing.includes('privacy_link_url'))
+  db.exec("ALTER TABLE avatars ADD COLUMN privacy_link_url TEXT DEFAULT ''")
+if (!existing.includes('privacy_text'))
+  db.exec("ALTER TABLE avatars ADD COLUMN privacy_text TEXT DEFAULT ''")
+
 // Tabella log richieste
 db.exec(`
   CREATE TABLE IF NOT EXISTS request_logs (

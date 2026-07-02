@@ -360,6 +360,7 @@ app.put('/api/admin/avatars/:id', (req, res) => {
                   'vad_noise_mult','stt_prompt',
                   'mcp_url','mcp_headers','mcp_tool_filter','mcp_skip_rewrite','tavily_api_key','tavily_enabled',
                   'startup_action','startup_mcp_tool','startup_mcp_args','startup_api_url','startup_api_method','startup_api_headers','startup_api_body','startup_api_output_field',
+                  'privacy_link_text','privacy_link_url','privacy_text',
                   'mic_bubble_visible','mic_bubble_text','mic_bubble_x','mic_bubble_y',
                   'mic_bubble_font','mic_bubble_font_size','mic_bubble_bg_color','mic_bubble_border_color','mic_bubble_border_radius','mic_bubble_bg_image','mic_bubble_width','mic_bubble_height',
                   'rate_limit_rpm',
