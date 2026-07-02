@@ -3034,6 +3034,7 @@ let _pttAnalyser = null; // { ctx, src, an }
 let _pttWarming = false;     // pre-warm in corso
 let _pttMode = 'hold';        // 'hold' = push-to-talk classico, 'auto' = VAD-like con auto-stop al silenzio
 let _pttSilenceTimer = 0;     // timer per auto-stop in modalita' 'auto'
+let _pttOverlaySafety = 0;     // safety timeout per overlay "Sto ascoltando"
 let _pttVoiceActiveEver = false; // true dopo la prima rilevazione di voce (per gating auto-stop)
 
 // Pre-warm del microfono: chiede il permesso una sola volta al boot.
@@ -3076,9 +3077,13 @@ function _pttResetVisual() {
   _pttVoiceActive = false;
   _pttVoiceActiveEver = false;
   if (_pttSilenceTimer) { clearTimeout(_pttSilenceTimer); _pttSilenceTimer = 0; }
+  if (_pttOverlaySafety) { clearTimeout(_pttOverlaySafety); _pttOverlaySafety = 0; }
   // Nascondi overlay "Sto ascoltando" su mobile
   const overlay = document.getElementById('ptt-listening-overlay');
-  if (overlay) overlay.classList.remove('active');
+  if (overlay) {
+    overlay.classList.remove('active');
+    console.log('[PTT-DIAG] reset visual, overlay rimosso');
+  }
   updatePttBtn();
 }
 
@@ -3282,6 +3287,12 @@ async function _pttStart(opts = {}) {
       if (icoFb)  icoFb.style.display = '';
     }
     listenOverlay.classList.add('active');
+    // Safety net: forza rimozione overlay dopo 30s se non rimosso prima
+    if (_pttOverlaySafety) clearTimeout(_pttOverlaySafety);
+    _pttOverlaySafety = setTimeout(() => {
+      listenOverlay.classList.remove('active');
+      _pttOverlaySafety = 0;
+    }, 30000);
   }
 
   setMode('recording');
