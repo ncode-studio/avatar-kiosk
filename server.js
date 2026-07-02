@@ -1245,17 +1245,22 @@ async function runStartupAction(cfg) {
 
   if (action === 'mcp') {
     const url = (cfg.mcp_url || '').trim();
-    if (!url) throw new Error('MCP URL non configurato (modalità AI MCP)');
-    if (!cfg.startup_mcp_tool) throw new Error('Nome tool MCP mancante');
+    if (!url) { console.warn('[STARTUP] MCP URL non configurato'); return ''; }
+    if (!cfg.startup_mcp_tool) { console.warn('[STARTUP] Nome tool MCP mancante, skip'); return ''; }
     const headers = parseJson(cfg.mcp_headers, {});
     const args    = parseJson(cfg.startup_mcp_args, {});
-    const result  = await mcpCallTool(url, headers, cfg.startup_mcp_tool, args);
-    return (result || '').toString().trim();
+    try {
+      const result = await mcpCallTool(url, headers, cfg.startup_mcp_tool, args);
+      return (result || '').toString().trim();
+    } catch (e) {
+      console.warn('[STARTUP] MCP tool call fallita:', e.message);
+      return '';
+    }
   }
 
   if (action === 'api') {
     const url = (cfg.startup_api_url || '').trim();
-    if (!url) throw new Error('API URL non configurato');
+    if (!url) { console.warn('[STARTUP] API URL non configurato'); return ''; }
     const headers = parseJson(cfg.startup_api_headers, {});
     const method  = (cfg.startup_api_method || 'GET').toUpperCase();
     const opts    = { method, headers: { ...headers } };
@@ -1264,19 +1269,23 @@ async function runStartupAction(cfg) {
       if (!Object.keys(headers).some(h => h.toLowerCase() === 'content-type'))
         opts.headers['Content-Type'] = 'application/json';
     }
-    const r   = await fetch(url, opts);
-    const raw = await r.text();
-    if (!r.ok) throw new Error(`HTTP ${r.status}: ${raw.slice(0, 200)}`);
-    const field = (cfg.startup_api_output_field || '').trim();
-    if (field) {
-      let data; try { data = JSON.parse(raw); } catch { return raw.trim(); }
-      return String(getNestedField(data, field) ?? '').trim();
-    }
-    // Nessun campo specificato: prova i nomi comuni, altrimenti testo grezzo
     try {
-      const d = JSON.parse(raw);
-      return (typeof d === 'string' ? d : (d.text || d.response || d.message || raw)).toString().trim();
-    } catch { return raw.trim(); }
+      const r   = await fetch(url, opts);
+      const raw = await r.text();
+      if (!r.ok) { console.warn(`[STARTUP] API HTTP ${r.status}: ${raw.slice(0, 200)}`); return ''; }
+      const field = (cfg.startup_api_output_field || '').trim();
+      if (field) {
+        let data; try { data = JSON.parse(raw); } catch { return raw.trim(); }
+        return String(getNestedField(data, field) ?? '').trim();
+      }
+      try {
+        const d = JSON.parse(raw);
+        return (typeof d === 'string' ? d : (d.text || d.response || d.message || raw)).toString().trim();
+      } catch { return raw.trim(); }
+    } catch (e) {
+      console.warn('[STARTUP] API call fallita:', e.message);
+      return '';
+    }
   }
 
   return '';
