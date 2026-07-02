@@ -571,6 +571,24 @@
       cursor:pointer; text-decoration:underline; padding:0;
     }
     .wiz-skip:hover { color:var(--text); }
+
+    .rt-toolbar { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
+    .rt-toolbar button {
+      min-width:30px; height:28px; padding:0 7px;
+      background:var(--panel-2, #2a2a33); color:var(--text);
+      border:1px solid var(--border, #3a3a44); border-radius:5px;
+      cursor:pointer; font-size:12px; line-height:1;
+    }
+    .rt-toolbar button:hover { background:var(--accent, #6d28d9); }
+    .rt-editor {
+      min-height:120px; max-height:320px; overflow-y:auto;
+      padding:10px 12px; border-radius:6px;
+      background:var(--input-bg, #1c1c22); color:var(--text);
+      border:1px solid var(--border, #3a3a44);
+      font-size:14px; line-height:1.5;
+    }
+    .rt-editor:focus { outline:none; border-color:var(--accent, #6d28d9); }
+    .rt-editor:empty:before { content:attr(data-placeholder); color:var(--text-dim, #888); }
   </style>
 </head>
 <body>
@@ -1852,6 +1870,118 @@
               </div>
             </div>
           </div>
+
+          <div class="subsection">
+            <div class="subsection-title">Privacy / Note legali</div>
+            <div class="fields single" style="gap:10px">
+              <div class="field">
+                <label>Testo mostrato in idle <span class="hint" style="margin:0">(rich-text, puoi inserire un link — vuoto = nascosto)</span></label>
+                <div class="rt-toolbar">
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-label','idle_privacy_label','bold')" title="Grassetto"><b>B</b></button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-label','idle_privacy_label','italic')" title="Corsivo"><i>I</i></button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-label','idle_privacy_label','underline')" title="Sottolineato"><u>U</u></button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtLink('f-idle-privacy-label','idle_privacy_label')" title="Link">🔗</button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-label','idle_privacy_label','removeFormat')" title="Rimuovi formattazione">✖</button>
+                </div>
+                <div id="f-idle-privacy-label" class="rt-editor" contenteditable="true" style="min-height:48px"
+                  oninput="sendToPreview({type:'idleParam',key:'idle_privacy_label',value:this.innerHTML})"></div>
+              </div>
+              <div class="field">
+                <label>URL esterno (se valorizzato viene embeddato in iframe, ha priorità sul testo)</label>
+                <input type="text" id="f-idle-privacy-url" placeholder="https://esempio.it/privacy"
+                  oninput="sendToPreview({type:'idleParam',key:'idle_privacy_url',value:this.value})"/>
+              </div>
+              <div class="field">
+                <label>Animazione popup <span class="hint" style="margin:0">(effetto tenda)</span></label>
+                <select id="f-idle-privacy-anim"
+                  onchange="sendToPreview({type:'idleParam',key:'idle_privacy_anim',value:this.value})">
+                  <option value="down">Scende dall'alto</option>
+                  <option value="up">Sale dal basso</option>
+                </select>
+              </div>
+              <div class="fields" style="gap:12px">
+                <div class="field">
+                  <label>Font del link <span class="hint" style="margin:0">(colore dal tema)</span></label>
+                  <select id="f-idle-privacy-font"
+                    onchange="sendToPreview({type:'idleParam',key:'idle_privacy_font',value:this.value})">
+                    <option value="">Default (tema)</option>
+                    <option value="Inter">Inter</option>
+                    <option value="Roboto">Roboto</option>
+                    <option value="Open Sans">Open Sans</option>
+                    <option value="Lato">Lato</option>
+                    <option value="Montserrat">Montserrat</option>
+                    <option value="Poppins">Poppins</option>
+                    <option value="Raleway">Raleway</option>
+                    <option value="Nunito">Nunito</option>
+                    <option value="Work Sans">Work Sans</option>
+                    <option value="Rubik">Rubik</option>
+                    <option value="Mulish">Mulish</option>
+                    <option value="Quicksand">Quicksand</option>
+                    <option value="Oswald">Oswald</option>
+                    <option value="Bebas Neue">Bebas Neue</option>
+                    <option value="Merriweather">Merriweather</option>
+                    <option value="Playfair Display">Playfair Display</option>
+                    <option value="PT Sans">PT Sans</option>
+                    <option value="Ubuntu">Ubuntu</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Dimensione <span id="val-idle-privacy-font-size">0.80</span>rem</label>
+                  <input type="range" id="s-idle-privacy-font-size" min="0.5" max="3.0" step="0.05" value="0.8"
+                    oninput="document.getElementById('val-idle-privacy-font-size').textContent=parseFloat(this.value).toFixed(2);
+                             sendToPreview({type:'idleParam',key:'idle_privacy_font_size',value:this.value})"/>
+                </div>
+              </div>
+              <div class="fields" style="gap:12px">
+                <div class="field">
+                  <label>Font del testo <span class="hint" style="margin:0">(informativa)</span></label>
+                  <select id="f-idle-privacy-text-font"
+                    onchange="sendToPreview({type:'idleParam',key:'idle_privacy_text_font',value:this.value})">
+                    <option value="">Default</option>
+                    <option value="Inter">Inter</option>
+                    <option value="Roboto">Roboto</option>
+                    <option value="Open Sans">Open Sans</option>
+                    <option value="Lato">Lato</option>
+                    <option value="Montserrat">Montserrat</option>
+                    <option value="Poppins">Poppins</option>
+                    <option value="Raleway">Raleway</option>
+                    <option value="Nunito">Nunito</option>
+                    <option value="Work Sans">Work Sans</option>
+                    <option value="Rubik">Rubik</option>
+                    <option value="Mulish">Mulish</option>
+                    <option value="Quicksand">Quicksand</option>
+                    <option value="Oswald">Oswald</option>
+                    <option value="Bebas Neue">Bebas Neue</option>
+                    <option value="Merriweather">Merriweather</option>
+                    <option value="Playfair Display">Playfair Display</option>
+                    <option value="PT Sans">PT Sans</option>
+                    <option value="Ubuntu">Ubuntu</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Dimensione testo <span id="val-idle-privacy-text-font-size">1.00</span>rem</label>
+                  <input type="range" id="s-idle-privacy-text-font-size" min="0.6" max="3.0" step="0.05" value="1.0"
+                    oninput="document.getElementById('val-idle-privacy-text-font-size').textContent=parseFloat(this.value).toFixed(2);
+                             sendToPreview({type:'idleParam',key:'idle_privacy_text_font_size',value:this.value})"/>
+                </div>
+              </div>
+              <div class="field">
+                <label>Testo (usato solo se l'URL è vuoto)</label>
+                <div class="rt-toolbar">
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-text','idle_privacy_text','bold')" title="Grassetto"><b>B</b></button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-text','idle_privacy_text','italic')" title="Corsivo"><i>I</i></button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-text','idle_privacy_text','underline')" title="Sottolineato"><u>U</u></button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-text','idle_privacy_text','formatBlock','h3')" title="Titolo">H</button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-text','idle_privacy_text','insertUnorderedList')" title="Elenco puntato">• List</button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-text','idle_privacy_text','insertOrderedList')" title="Elenco numerato">1. List</button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtLink('f-idle-privacy-text','idle_privacy_text')" title="Link">🔗</button>
+                  <button type="button" onmousedown="event.preventDefault()" onclick="rtCmd('f-idle-privacy-text','idle_privacy_text','removeFormat')" title="Rimuovi formattazione">✖</button>
+                </div>
+                <div id="f-idle-privacy-text" class="rt-editor" contenteditable="true"
+                  oninput="sendToPreview({type:'idleParam',key:'idle_privacy_text',value:this.innerHTML})"></div>
+              </div>
+            </div>
+          </div>
         </div>
 
       </div><!-- /tab-aspetto -->
@@ -2446,6 +2576,26 @@ function selectAvatar(id) {
   document.getElementById('f-idle-title').value    = a.idle_title    || '';
   document.getElementById('f-idle-subtitle').value = a.idle_subtitle ?? '';
   document.getElementById('f-idle-hint').value     = a.idle_hint     ?? '';
+  document.getElementById('f-idle-privacy-label').innerHTML = a.idle_privacy_label || '';
+  document.getElementById('f-idle-privacy-url').value      = a.idle_privacy_url   || '';
+  document.getElementById('f-idle-privacy-anim').value     = a.idle_privacy_anim  || 'down';
+  sendToPreview({type:'idleParam', key:'idle_privacy_anim', value: a.idle_privacy_anim || 'down'});
+  document.getElementById('f-idle-privacy-text').innerHTML = a.idle_privacy_text  || '';
+  document.getElementById('f-idle-privacy-font').value     = a.idle_privacy_font  || '';
+  const idlePrivacyFontSize = a.idle_privacy_font_size ?? 0.8;
+  document.getElementById('s-idle-privacy-font-size').value = idlePrivacyFontSize;
+  document.getElementById('val-idle-privacy-font-size').textContent = idlePrivacyFontSize.toFixed(2);
+  sendToPreview({type:'idleParam', key:'idle_privacy_label', value: a.idle_privacy_label || ''});
+  sendToPreview({type:'idleParam', key:'idle_privacy_url',   value: a.idle_privacy_url   || ''});
+  sendToPreview({type:'idleParam', key:'idle_privacy_text',  value: a.idle_privacy_text  || ''});
+  sendToPreview({type:'idleParam', key:'idle_privacy_font',  value: a.idle_privacy_font  || ''});
+  sendToPreview({type:'idleParam', key:'idle_privacy_font_size', value: idlePrivacyFontSize});
+  document.getElementById('f-idle-privacy-text-font').value = a.idle_privacy_text_font || '';
+  const idlePrivacyTextFontSize = a.idle_privacy_text_font_size ?? 1.0;
+  document.getElementById('s-idle-privacy-text-font-size').value = idlePrivacyTextFontSize;
+  document.getElementById('val-idle-privacy-text-font-size').textContent = idlePrivacyTextFontSize.toFixed(2);
+  sendToPreview({type:'idleParam', key:'idle_privacy_text_font',      value: a.idle_privacy_text_font || ''});
+  sendToPreview({type:'idleParam', key:'idle_privacy_text_font_size', value: idlePrivacyTextFontSize});
   document.getElementById('f-idle-font').value     = a.idle_font     || '';
   const idleFontSize = a.idle_font_size ?? 1.1;
   document.getElementById('s-idle-font-size').value         = idleFontSize;
@@ -2519,6 +2669,26 @@ function updateSlider(key, val) {
   // Invia aggiornamento real-time all'iframe
   const dbKey = SLIDER_MAP[key];
   if (dbKey) sendToPreview({ type: 'avatarParam', key: dbKey, value: v });
+}
+
+// ── Editor rich-text (privacy) ────────────────────────────────────────────────
+function rtSync(editorId, key) {
+  const ed = document.getElementById(editorId);
+  if (ed) sendToPreview({ type: 'idleParam', key, value: ed.innerHTML });
+}
+function rtCmd(editorId, key, cmd, val) {
+  const ed = document.getElementById(editorId);
+  if (ed) ed.focus();
+  document.execCommand(cmd, false, val || null);
+  rtSync(editorId, key);
+}
+function rtLink(editorId, key) {
+  const url = prompt('URL del link:', 'https://');
+  if (!url) return;
+  const ed = document.getElementById(editorId);
+  if (ed) ed.focus();
+  document.execCommand('createLink', false, url);
+  rtSync(editorId, key);
 }
 
 function rgbaToHexAlpha(val) {
@@ -2999,6 +3169,14 @@ async function saveAvatar() {
     idle_title:      document.getElementById('f-idle-title').value,
     idle_subtitle:   document.getElementById('f-idle-subtitle').value,
     idle_hint:       document.getElementById('f-idle-hint').value,
+    idle_privacy_label: document.getElementById('f-idle-privacy-label').innerHTML,
+    idle_privacy_url:   document.getElementById('f-idle-privacy-url').value.trim(),
+    idle_privacy_text:  document.getElementById('f-idle-privacy-text').innerHTML,
+    idle_privacy_font:  document.getElementById('f-idle-privacy-font').value.trim(),
+    idle_privacy_font_size: parseFloat(document.getElementById('s-idle-privacy-font-size').value),
+    idle_privacy_text_font: document.getElementById('f-idle-privacy-text-font').value.trim(),
+    idle_privacy_text_font_size: parseFloat(document.getElementById('s-idle-privacy-text-font-size').value),
+    idle_privacy_anim: document.getElementById('f-idle-privacy-anim').value,
     idle_font:       document.getElementById('f-idle-font').value,
     idle_font_size:  parseFloat(document.getElementById('s-idle-font-size').value),
     idle_bg_color:       document.getElementById('f-idle-bg-color').dataset.active === '1'

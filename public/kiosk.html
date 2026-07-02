@@ -492,6 +492,60 @@
     }
     #idle-overlay.hidden { opacity: 0; pointer-events: none; }
 
+    #idle-privacy-link {
+      position: relative; z-index: 2;
+      margin-top: 20px;
+      font-size: var(--idle-privacy-font-size, 0.8rem);
+      color: var(--accent);
+      cursor: pointer;
+      text-align: center;
+      font-family: var(--idle-privacy-font-family, inherit);
+    }
+    #idle-privacy-link:hover { opacity: 0.8; }
+    #idle-privacy-link a { color: inherit; text-underline-offset: 3px; }
+    #idle-privacy-link p { margin: 0; }
+
+    #idle-privacy-modal {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(10,10,15,0.97);
+      display: flex; flex-direction: column;
+      transform: translateY(0);
+      transition: transform 0.6s cubic-bezier(.22,.61,.36,1);
+    }
+    /* Animazione a tenda: default scende dall'alto (down); anim-up sale dal basso */
+    #idle-privacy-modal.hidden { pointer-events: none; transform: translateY(-100%); }
+    #idle-privacy-modal.anim-up.hidden { transform: translateY(100%); }
+    #idle-privacy-close {
+      position: fixed; top: 28px; right: 32px;
+      width: 48px; height: 48px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.85); background: rgba(15,15,20,0.92); color: #fff;
+      font-size: 22px; line-height: 44px; text-align: center;
+      cursor: pointer; z-index: 10;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    }
+    #idle-privacy-close:hover { background: rgba(40,40,50,0.98); }
+    #idle-privacy-body {
+      max-width: 820px; width: 100%; margin: 0 auto;
+      padding: 72px 28px 48px; overflow-y: auto;
+      color: #f0f0f0; line-height: 1.6;
+      font-size: var(--idle-privacy-text-font-size, 1rem);
+      font-family: var(--idle-privacy-text-font-family, inherit);
+    }
+    #idle-privacy-fallback {
+      position: absolute; inset: 0; display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 18px; text-align: center; padding: 32px; color: #f0f0f0;
+    }
+    #idle-privacy-fallback.show { display: flex; }
+    #idle-privacy-fallback a {
+      display: inline-block; padding: 12px 22px; border-radius: 8px;
+      background: var(--accent); color: #fff; text-decoration: none; font-weight: 600;
+    }
+    #idle-privacy-body h1, #idle-privacy-body h2, #idle-privacy-body h3 { margin: 0.7em 0 0.35em; line-height: 1.25; }
+    #idle-privacy-body a { color: var(--accent); }
+    #idle-privacy-body ul, #idle-privacy-body ol { padding-left: 1.4em; }
+    #idle-privacy-frame { flex: 1; width: 100%; border: none; }
+
     .idle-avatar-icon {
       width: 140px; height: 140px;
       border-radius: 50%;
@@ -1056,6 +1110,18 @@
     <h2 id="idle-title"></h2>
     <p id="idle-subtitle"></p>
     <div class="tap-hint" id="idle-hint"></div>
+    <div id="idle-privacy-link" style="display:none" onclick="event.stopPropagation(); event.preventDefault(); openPrivacyModal();"></div>
+  </div>
+
+  <!-- Privacy popup a pieno schermo -->
+  <div id="idle-privacy-modal" class="hidden">
+    <button id="idle-privacy-close" type="button" aria-label="Chiudi" onclick="closePrivacyModal()">✕</button>
+    <div id="idle-privacy-body"></div>
+    <iframe id="idle-privacy-frame" style="display:none" referrerpolicy="no-referrer"></iframe>
+    <div id="idle-privacy-fallback">
+      <div>Questo sito non consente la visualizzazione integrata.</div>
+      <a id="idle-privacy-fallback-link" href="#" target="_blank" rel="noopener">Apri in una nuova scheda</a>
+    </div>
   </div>
 
 </div>
@@ -4400,8 +4466,121 @@ function applyIdleParam(key, value) {
     document.getElementById('idle-overlay')?.style.setProperty('--idle-font-size', parseFloat(value) + 'rem');
     return;
   }
+  if (key === 'idle_privacy_font_size') {
+    document.getElementById('idle-privacy-link')?.style.setProperty('--idle-privacy-font-size', parseFloat(value) + 'rem');
+    return;
+  }
+  if (key === 'idle_privacy_anim') {
+    const modal = document.getElementById('idle-privacy-modal');
+    if (modal) modal.classList.toggle('anim-up', value === 'up');
+    return;
+  }
+  if (key === 'idle_privacy_text_font_size') {
+    document.getElementById('idle-privacy-body')?.style.setProperty('--idle-privacy-text-font-size', parseFloat(value) + 'rem');
+    return;
+  }
+  if (key === 'idle_privacy_text_font') {
+    const body = document.getElementById('idle-privacy-body');
+    if (!body) return;
+    if (value) {
+      const l = document.getElementById('_privacy-text-font-link') || document.createElement('link');
+      l.id = '_privacy-text-font-link'; l.rel = 'stylesheet';
+      l.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(value).replace(/%20/g,'+')}&display=swap`;
+      document.head.appendChild(l);
+      body.style.setProperty('--idle-privacy-text-font-family', `'${value}', sans-serif`);
+    } else {
+      body.style.setProperty('--idle-privacy-text-font-family', 'inherit');
+    }
+    return;
+  }
+  if (key === 'idle_privacy_font') {
+    const link = document.getElementById('idle-privacy-link');
+    if (!link) return;
+    if (value) {
+      const l = document.getElementById('_privacy-font-link') || document.createElement('link');
+      l.id = '_privacy-font-link'; l.rel = 'stylesheet';
+      l.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(value).replace(/%20/g,'+')}&display=swap`;
+      document.head.appendChild(l);
+      link.style.setProperty('--idle-privacy-font-family', `'${value}', sans-serif`);
+    } else {
+      link.style.setProperty('--idle-privacy-font-family', 'inherit');
+    }
+    return;
+  }
+  if (key === 'idle_privacy_label' || key === 'idle_privacy_url' || key === 'idle_privacy_text') {
+    if (key === 'idle_privacy_label') CONFIG._privacyLabel = value || '';
+    if (key === 'idle_privacy_url')   CONFIG._privacyUrl   = value || '';
+    if (key === 'idle_privacy_text')  CONFIG._privacyText  = value || '';
+    renderPrivacyLink();
+    return;
+  }
   const el = document.getElementById(IDLE_ID_MAP[key]);
   if (el) el.textContent = value;
+}
+
+function renderPrivacyLink() {
+  const link = document.getElementById('idle-privacy-link');
+  if (!link) return;
+  const label = CONFIG._privacyLabel || '';
+  const labelText = label.replace(/<[^>]*>/g, '').trim();
+  const hasContent = !!(CONFIG._privacyUrl || CONFIG._privacyText);
+  if (labelText && hasContent) {
+    link.innerHTML = label;
+    link.style.display = '';
+  } else {
+    link.style.display = 'none';
+  }
+}
+
+// Per i doc pubblicati di Google, forza embedded=true così spariscono
+// le barre "Pubblicata utilizzando Documenti Google" / titolo / "Segnala abuso".
+function _embedGoogleUrl(url) {
+  try {
+    const u = new URL(url);
+    if (u.hostname === 'docs.google.com' && !u.searchParams.has('embedded')) {
+      u.searchParams.set('embedded', 'true');
+      return u.toString();
+    }
+  } catch (e) {}
+  return url;
+}
+
+let _privacyFallbackTimer = null;
+function openPrivacyModal() {
+  const modal = document.getElementById('idle-privacy-modal');
+  const body  = document.getElementById('idle-privacy-body');
+  const frame = document.getElementById('idle-privacy-frame');
+  const fb    = document.getElementById('idle-privacy-fallback');
+  if (!modal) return;
+  fb.classList.remove('show');
+  clearTimeout(_privacyFallbackTimer);
+  if (CONFIG._privacyUrl) {           // URL vince: embed iframe
+    let loaded = false;
+    frame.onload = () => { loaded = true; fb.classList.remove('show'); };
+    document.getElementById('idle-privacy-fallback-link').href = CONFIG._privacyUrl;
+    frame.src = _embedGoogleUrl(CONFIG._privacyUrl);
+    frame.style.display = '';
+    body.style.display = 'none';
+    // Se dopo 2.5s l'iframe non ha caricato (X-Frame-Options/CSP), mostra fallback
+    _privacyFallbackTimer = setTimeout(() => { if (!loaded) fb.classList.add('show'); }, 2500);
+  } else {                            // altrimenti testo rich-text
+    body.innerHTML = CONFIG._privacyText || '';
+    body.style.display = '';
+    frame.style.display = 'none';
+    frame.src = 'about:blank';
+  }
+  modal.classList.remove('hidden');
+}
+
+function closePrivacyModal() {
+  const modal = document.getElementById('idle-privacy-modal');
+  const frame = document.getElementById('idle-privacy-frame');
+  if (!modal) return;
+  clearTimeout(_privacyFallbackTimer);
+  modal.classList.add('hidden');
+  document.getElementById('idle-privacy-fallback')?.classList.remove('show');
+  // svuota l'iframe solo a transizione finita, così il contenuto scorre via visibilmente
+  setTimeout(() => { if (frame && modal.classList.contains('hidden')) frame.src = 'about:blank'; }, 650);
 }
 
 // ── WebSocket: aggiornamenti config dal server ────────────────────────────────
@@ -4455,6 +4634,14 @@ function applyIdleParam(key, value) {
         if (d.idle_bg_opacity !== undefined) applyIdleParam('idle_bg_opacity', d.idle_bg_opacity);
         if (d.idle_font       !== undefined) applyIdleParam('idle_font',       d.idle_font);
         if (d.idle_font_size  !== undefined) applyIdleParam('idle_font_size',  d.idle_font_size);
+        if (d.idle_privacy_label !== undefined) applyIdleParam('idle_privacy_label', d.idle_privacy_label);
+        if (d.idle_privacy_url   !== undefined) applyIdleParam('idle_privacy_url',   d.idle_privacy_url);
+        if (d.idle_privacy_text  !== undefined) applyIdleParam('idle_privacy_text',  d.idle_privacy_text);
+        if (d.idle_privacy_font  !== undefined) applyIdleParam('idle_privacy_font',  d.idle_privacy_font);
+        if (d.idle_privacy_font_size !== undefined) applyIdleParam('idle_privacy_font_size', d.idle_privacy_font_size);
+        if (d.idle_privacy_text_font      !== undefined) applyIdleParam('idle_privacy_text_font',      d.idle_privacy_text_font);
+        if (d.idle_privacy_text_font_size !== undefined) applyIdleParam('idle_privacy_text_font_size', d.idle_privacy_text_font_size);
+        if (d.idle_privacy_anim !== undefined) applyIdleParam('idle_privacy_anim', d.idle_privacy_anim);
         if (d.vad_threshold           !== undefined) applyParamLive('vad_threshold',           d.vad_threshold);
         if (d.vad_silence_duration    !== undefined) applyParamLive('vad_silence_duration',    d.vad_silence_duration);
         if (d.vad_min_speech_duration !== undefined) applyParamLive('vad_min_speech_duration', d.vad_min_speech_duration);
@@ -4765,6 +4952,14 @@ async function initAvatar() {
     applyIdleParam('idle_bg_opacity',     cfg.idle_bg_opacity     ?? 1);
     applyIdleParam('idle_font',      cfg.idle_font      || '');
     applyIdleParam('idle_font_size', cfg.idle_font_size ?? 1.0);
+    applyIdleParam('idle_privacy_label', cfg.idle_privacy_label || '');
+    applyIdleParam('idle_privacy_url',   cfg.idle_privacy_url   || '');
+    applyIdleParam('idle_privacy_text',  cfg.idle_privacy_text  || '');
+    applyIdleParam('idle_privacy_font',  cfg.idle_privacy_font  || '');
+    applyIdleParam('idle_privacy_font_size', cfg.idle_privacy_font_size ?? 0.8);
+    applyIdleParam('idle_privacy_text_font',      cfg.idle_privacy_text_font      || '');
+    applyIdleParam('idle_privacy_text_font_size', cfg.idle_privacy_text_font_size ?? 1.0);
+    applyIdleParam('idle_privacy_anim', cfg.idle_privacy_anim || 'down');
     CONFIG.idleTimeout = (cfg.idle_timeout ?? 90) * 1000;
     CONFIG.idleDisabled = !!(cfg.idle_disabled);
     CONFIG.wakeWordEnabled = !!(cfg.wake_word_enabled);

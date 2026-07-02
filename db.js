@@ -65,6 +65,14 @@ db.exec(`
     idle_bg_opacity   REAL DEFAULT 1,
     idle_font         TEXT DEFAULT '',
     idle_font_size    REAL DEFAULT 1.1,
+    idle_privacy_label TEXT DEFAULT '',
+    idle_privacy_url  TEXT DEFAULT '',
+    idle_privacy_text TEXT DEFAULT '',
+    idle_privacy_font TEXT DEFAULT '',
+    idle_privacy_font_size REAL DEFAULT 0.8,
+    idle_privacy_text_font TEXT DEFAULT '',
+    idle_privacy_text_font_size REAL DEFAULT 1.0,
+    idle_privacy_anim TEXT DEFAULT 'down',
     overlay_color     TEXT DEFAULT '#0a0a0f',
     overlay_opacity   REAL DEFAULT 0.75,
     overlay_height    REAL DEFAULT 65,
@@ -279,6 +287,22 @@ if (!existing.includes('idle_font'))
   db.exec("ALTER TABLE avatars ADD COLUMN idle_font TEXT DEFAULT ''");
 if (!existing.includes('idle_font_size'))
   db.exec("ALTER TABLE avatars ADD COLUMN idle_font_size REAL DEFAULT 1.1");
+if (!existing.includes('idle_privacy_label'))
+  db.exec("ALTER TABLE avatars ADD COLUMN idle_privacy_label TEXT DEFAULT ''");
+if (!existing.includes('idle_privacy_url'))
+  db.exec("ALTER TABLE avatars ADD COLUMN idle_privacy_url TEXT DEFAULT ''");
+if (!existing.includes('idle_privacy_text'))
+  db.exec("ALTER TABLE avatars ADD COLUMN idle_privacy_text TEXT DEFAULT ''");
+if (!existing.includes('idle_privacy_font'))
+  db.exec("ALTER TABLE avatars ADD COLUMN idle_privacy_font TEXT DEFAULT ''");
+if (!existing.includes('idle_privacy_font_size'))
+  db.exec("ALTER TABLE avatars ADD COLUMN idle_privacy_font_size REAL DEFAULT 0.8");
+if (!existing.includes('idle_privacy_text_font'))
+  db.exec("ALTER TABLE avatars ADD COLUMN idle_privacy_text_font TEXT DEFAULT ''");
+if (!existing.includes('idle_privacy_text_font_size'))
+  db.exec("ALTER TABLE avatars ADD COLUMN idle_privacy_text_font_size REAL DEFAULT 1.0");
+if (!existing.includes('idle_privacy_anim'))
+  db.exec("ALTER TABLE avatars ADD COLUMN idle_privacy_anim TEXT DEFAULT 'down'");
 if (!existing.includes('theme'))
   db.exec("ALTER TABLE avatars ADD COLUMN theme TEXT DEFAULT 'viola'");
 if (!existing.includes('model_hash'))
