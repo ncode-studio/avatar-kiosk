@@ -3321,6 +3321,12 @@ async function _pttStart(opts = {}) {
       if (icoImg) icoImg.style.display = 'none';
       if (icoFb)  icoFb.style.display = '';
     }
+    // Forza restart delle animazioni degli anelli (per la 2a, 3a... volta)
+    listenOverlay.querySelectorAll('.ptt-listening-ring').forEach(r => {
+      r.style.animation = 'none';
+      r.offsetWidth; // forza reflow
+      r.style.animation = '';
+    });
     listenOverlay.classList.add('active');
     // Safety net: forza rimozione overlay dopo 30s se non rimosso prima
     if (_pttOverlaySafety) clearTimeout(_pttOverlaySafety);
