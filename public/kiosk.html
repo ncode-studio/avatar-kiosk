@@ -3030,10 +3030,16 @@ function updatePttBtn(viewportW) {
   };
   const _showWave = () => {
     if (waveEl) {
-      // Forza restart animazione barre (ogni TTS la wave riparte da capo)
+      // Forza restart animazione barre: clone + animation reset
       waveEl.querySelectorAll('.btn-wave-bar').forEach(bar => {
         const clone = bar.cloneNode(true);
+        // Rimuovi qualsiasi animation inline che potrebbe bloccare il restart
+        clone.style.animation = 'none';
+        clone.style.height = '';
         bar.parentNode.replaceChild(clone, bar);
+        // Forza reflow + ripristina animation
+        void clone.offsetWidth;
+        clone.style.animation = '';
       });
       waveEl.style.display = 'flex';
     }
