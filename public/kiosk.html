@@ -3255,6 +3255,9 @@ async function _pttStart(opts = {}) {
 
     const blob = new Blob(chunks, { type: actualMime });
     setMode('thinking');
+    // Mostra typing dots durante la fase STT (subito dopo l'ascolto)
+    const typingEl = document.getElementById('typing');
+    if (typingEl) typingEl.classList.add('visible');
     // transcribeAndProcess gestisce trascrizione, allucinazioni e stato finale
     await transcribeAndProcess(blob);
   };
