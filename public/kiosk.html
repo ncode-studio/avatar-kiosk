@@ -3022,7 +3022,14 @@ function updatePttBtn(viewportW) {
     }
   };
   const _showWave = () => {
-    if (waveEl) waveEl.style.display = 'flex';
+    if (waveEl) {
+      // Forza restart animazione barre (ogni TTS la wave riparte da capo)
+      waveEl.querySelectorAll('.btn-wave-bar').forEach(bar => {
+        const clone = bar.cloneNode(true);
+        bar.parentNode.replaceChild(clone, bar);
+      });
+      waveEl.style.display = 'flex';
+    }
     if (iconEl) iconEl.style.opacity = '0';
     if (fallEl) fallEl.style.opacity = '0';
   };
@@ -3113,8 +3120,10 @@ function _pttResetVisual() {
   const overlay = document.getElementById('ptt-listening-overlay');
   if (overlay) {
     overlay.classList.remove('active');
-    console.log('[PTT-DIAG] reset visual, overlay rimosso');
+    console.log('[PTT-DIAG] _pttResetVisual: overlay nascosto');
   }
+  updatePttBtn();
+}
   updatePttBtn();
 }
 
