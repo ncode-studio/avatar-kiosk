@@ -3321,11 +3321,15 @@ async function _pttStart(opts = {}) {
       if (icoImg) icoImg.style.display = 'none';
       if (icoFb)  icoFb.style.display = '';
     }
-    // Forza restart delle animazioni degli anelli (per la 2a, 3a... volta)
-    listenOverlay.querySelectorAll('.ptt-listening-ring').forEach(r => {
-      r.style.animation = 'none';
-      r.offsetWidth; // forza reflow
-      r.style.animation = '';
+    // Forza restart completo dell'overlay: clona gli anelli per resettare le animazioni
+    const rings = listenOverlay.querySelectorAll('.ptt-listening-ring');
+    rings.forEach(r => {
+      const parent = r.parentNode;
+      const clone = r.cloneNode(true);
+      clone.style.animation = 'none';
+      parent.replaceChild(clone, r);
+      void clone.offsetWidth; // forza reflow
+      clone.style.animation = '';
     });
     listenOverlay.classList.add('active');
     // Safety net: forza rimozione overlay dopo 30s se non rimosso prima
