@@ -3045,10 +3045,19 @@ function updatePttBtn(viewportW) {
     btn.style.borderColor = _themeColor(CONFIG.pttBorderColor || CONFIG.micBorderColor, 'rgba(34,211,160,.5)');
     _showWave();
   } else if (mode === 'recording') {
-    // PTT premuto: colore tema + waveform continua (non alterna con icona)
+    // PTT premuto: colore tema + waveform (piatta se silenzio, animata se voce)
     btn.style.background  = _themeColor(CONFIG.pttBgColor  || CONFIG.micBgColor,  'rgba(34,211,160,.15)');
     btn.style.borderColor = _themeColor(CONFIG.pttBorderColor || CONFIG.micBorderColor, 'rgba(34,211,160,.5)');
     _showWave();
+    // In silenzio le barre restano piatte (4px). Quando l'utente parla, l'analyser
+    // RMS riapre l'animazione wave-bar rimuovendo l'inline height.
+    if (waveEl) {
+      const bars = waveEl.querySelectorAll('.btn-wave-bar');
+      bars.forEach(b => {
+        if (_pttVoiceActive) b.style.animationPlayState = 'running';
+        else { b.style.animationPlayState = 'paused'; b.style.height = '4px'; }
+      });
+    }
   } else {
     // Idle / thinking: colori normali, icona
     btn.style.background  = CONFIG.pttBgColor || CONFIG.micBgColor || 'rgba(34,211,160,.15)';
