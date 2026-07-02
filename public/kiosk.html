@@ -3309,6 +3309,9 @@ async function _pttStart(opts = {}) {
   // Su mobile mostra overlay "Sto ascoltando..."
   const listenOverlay = document.getElementById('ptt-listening-overlay');
   if (listenOverlay && window.innerWidth <= 600) {
+    // Reset stato overlay prima di riattivare
+    if (_pttOverlaySafety) { clearTimeout(_pttOverlaySafety); _pttOverlaySafety = 0; }
+    listenOverlay.classList.remove('active');
     // Imposta icona dal config (ptt_icon o mic_icon), fallback emoji
     const ico = CONFIG.pttIcon || CONFIG.micIcon;
     const icoImg = document.getElementById('ptt-listening-icon');
@@ -3333,7 +3336,6 @@ async function _pttStart(opts = {}) {
     });
     listenOverlay.classList.add('active');
     // Safety net: forza rimozione overlay dopo 30s se non rimosso prima
-    if (_pttOverlaySafety) clearTimeout(_pttOverlaySafety);
     _pttOverlaySafety = setTimeout(() => {
       listenOverlay.classList.remove('active');
       _pttOverlaySafety = 0;
