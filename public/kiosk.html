@@ -740,12 +740,81 @@
       #rotate-overlay { display: flex !important; }
       #app { visibility: hidden; }
     }
+
+    /* ─── Overlay PTT "Sto ascoltando" (solo mobile) ─────────────────────── */
+    #ptt-listening-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      background: radial-gradient(circle at center, rgba(248,113,113,.18) 0%, rgba(10,10,15,.85) 60%);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #fff;
+      pointer-events: none;
+      animation: ptt-fade-in 0.18s ease-out;
+    }
+    #ptt-listening-overlay.active { display: flex !important; }
+    .ptt-listening-mic {
+      font-size: 5rem;
+      filter: drop-shadow(0 0 24px rgba(248,113,113,.6));
+      animation: ptt-mic-pulse 1.4s ease-in-out infinite;
+      position: relative;
+      z-index: 2;
+    }
+    .ptt-listening-text {
+      font-size: 1.4rem;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-shadow: 0 0 16px rgba(248,113,113,.8);
+      animation: ptt-text-pulse 1.4s ease-in-out infinite;
+    }
+    .ptt-listening-ring {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 160px;
+      height: 160px;
+      margin: -80px 0 0 -80px;
+      border: 3px solid rgba(248,113,113,.6);
+      border-radius: 50%;
+      opacity: 0;
+      animation: ptt-ring 2.4s ease-out infinite;
+    }
+    .ptt-listening-ring-2 { animation-delay: 0.8s; }
+    .ptt-listening-ring-3 { animation-delay: 1.6s; }
+    @keyframes ptt-fade-in {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes ptt-mic-pulse {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.15); }
+    }
+    @keyframes ptt-text-pulse {
+      0%, 100% { opacity: 0.7; }
+      50%      { opacity: 1; }
+    }
+    @keyframes ptt-ring {
+      0%   { transform: scale(0.5); opacity: 0.9; }
+      100% { transform: scale(2.2); opacity: 0;   }
+    }
   </style>
 </head>
 <body class="idle-hidden">
 <div id="rotate-overlay">
   <div class="rotate-icon">📱</div>
   <div class="rotate-text">Ruota il dispositivo in verticale</div>
+</div>
+<div id="ptt-listening-overlay">
+  <div class="ptt-listening-ring"></div>
+  <div class="ptt-listening-ring ptt-listening-ring-2"></div>
+  <div class="ptt-listening-ring ptt-listening-ring-3"></div>
+  <div class="ptt-listening-mic">🎤</div>
+  <div class="ptt-listening-text">Sto ascoltando…</div>
 </div>
 <div id="app">
 
@@ -2018,10 +2087,14 @@ async function handleSayMessage(text) {
 
 async function playTTSAudio(ttsData) {
   if (_isIOS) {
-    // Su iOS: riusa l'<audio> pre-warmato (sessione audio gia' sbloccata
-    // dal primo pointerdown sulla pagina). Cambia solo src e play().
+    // Su iOS: riusa l'<audio> pre-warmato + GainNode via MediaElementSource
+    // per amplificare il volume sopra 1.0 (HTMLAudio.volume e' clampato).
     try {
       if (_lipAudioCtx?.state === 'suspended') await _lipAudioCtx.resume().catch(() => {});
+
+      // Cleanup catena precedente
+      if (_iosAudioSrc) { try { _iosAudioSrc.disconnect(); } catch(_){} _iosAudioSrc = null; }
+      if (_iosAudioGain) { try { _iosAudioGain.disconnect(); } catch(_){} _iosAudioGain = null; }
 
       const audio = _getIosAudioEl();
       try { audio.pause(); } catch(_){}
@@ -2037,8 +2110,20 @@ async function playTTSAudio(ttsData) {
         setTimeout(resolve, 3000);
       });
 
+      // Catena: <audio> -> MediaElementSource -> GainNode -> destination
+      // MediaElementSource puo' essere creato una sola volta per elemento,
+      // ma _iosAudioEl e' riusato (pre-warmato) e non ha mai avuto MediaElementSource.
+      const src = _lipAudioCtx.createMediaElementSource(audio);
+      const gain = _lipAudioCtx.createGain();
+      // Mobile 2.5x, desktop 1.0
+      const baseVol = (window.innerWidth <= 600 ? 2.5 : 1.0);
       const userVol = (typeof CONFIG.ttsVolume === 'number' ? CONFIG.ttsVolume : 1.0);
-      audio.volume = Math.min(1.0, userVol);
+      gain.gain.value = baseVol * userVol;
+      src.connect(gain).connect(_lipAudioCtx.destination);
+      _iosAudioSrc = src;
+      _iosAudioGain = gain;
+
+      audio.volume = 1.0; // volume massimo dell'<audio>, amplifica via GainNode
       state.currentAudio = { pause: () => { try { audio.pause(); } catch(_){} }, _ios: true };
       if (typeof startLipSync === 'function') startLipSync(audio, ttsData.alignment);
 
@@ -2969,6 +3054,9 @@ function _pttResetVisual() {
   _pttVoiceActive = false;
   _pttVoiceActiveEver = false;
   if (_pttSilenceTimer) { clearTimeout(_pttSilenceTimer); _pttSilenceTimer = 0; }
+  // Nascondi overlay "Sto ascoltando" su mobile
+  const overlay = document.getElementById('ptt-listening-overlay');
+  if (overlay) overlay.classList.remove('active');
   updatePttBtn();
 }
 
@@ -3151,6 +3239,10 @@ async function _pttStart(opts = {}) {
     setMode('listening');
     return;
   }
+
+  // Su mobile mostra overlay "Sto ascoltando..."
+  const listenOverlay = document.getElementById('ptt-listening-overlay');
+  if (listenOverlay && window.innerWidth <= 600) listenOverlay.classList.add('active');
 
   setMode('recording');
 }
