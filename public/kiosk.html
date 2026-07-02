@@ -710,7 +710,8 @@
         right: auto !important;
       }
       #ptt-btn.ptt-pressing {
-        transform: translateX(-50%) !important;
+        /* Nessun transform durante la pressione: il pulsante resta immobile */
+        transform: none !important;
       }
     }
     /* Disabilita gesture native iOS/Android sul pulsante PTT
