@@ -312,6 +312,31 @@
     .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
     .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
 
+    /* Typing indicator "utente sta scrivendo" (durante STT) */
+    .user-typing-indicator {
+      align-self: flex-end;
+      display: none;
+      margin-top: 10px;
+      gap: calc(var(--chat-font-size) * 0.35);
+      padding: calc(var(--chat-font-size) * 0.75) calc(var(--chat-font-size) * 1.4);
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+      border-radius: 18px 18px 4px 18px;
+      backdrop-filter: blur(8px);
+      font-family: var(--chat-font-family);
+    }
+    .user-typing-indicator.visible { display: flex; align-items: center; }
+    .user-typing-indicator span {
+      width: calc(var(--chat-font-size) * 0.38);
+      height: calc(var(--chat-font-size) * 0.38);
+      background: var(--accent);
+      border-radius: 50%;
+      animation: typing 1.2s infinite;
+      flex-shrink: 0;
+    }
+    .user-typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .user-typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
     /* ─── Input testuale (fallback) ─────────────────── */
     #input-area { padding: 10px 20px 24px; padding-bottom: max(24px, env(safe-area-inset-bottom, 24px)); display: flex; gap: 10px; position: relative; z-index: 22; }
 
@@ -992,6 +1017,9 @@
       <div id="response-area">
         <div id="scroll-hint" onclick="forceScrollToBottom()">↓ Nuovo messaggio</div>
         <div id="chat-history"></div>
+        <div class="user-typing-indicator" id="user-typing">
+          <span></span><span></span><span></span>
+        </div>
         <div class="typing-indicator" id="typing">
           <span></span><span></span><span></span>
         </div>
@@ -3255,11 +3283,14 @@ async function _pttStart(opts = {}) {
 
     const blob = new Blob(chunks, { type: actualMime });
     setMode('thinking');
-    // Mostra typing dots durante la fase STT (subito dopo l'ascolto)
-    const typingEl = document.getElementById('typing');
-    if (typingEl) typingEl.classList.add('visible');
+    // Mostra "utente sta scrivendo" durante la fase STT
+    const userTypingEl = document.getElementById('user-typing');
+    if (userTypingEl) userTypingEl.classList.add('visible');
+    scrollToBottom();
     // transcribeAndProcess gestisce trascrizione, allucinazioni e stato finale
     await transcribeAndProcess(blob);
+    // Nascondi quando la trascrizione arriva
+    if (userTypingEl) userTypingEl.classList.remove('visible');
   };
 
   try {
