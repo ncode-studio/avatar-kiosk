@@ -2393,6 +2393,9 @@ async function processUserInput(text) {
 
   // Aggiunge messaggio utente alla cronologia
   addToHistory('user', text);
+  // Nascondi "utente sta scrivendo" ora che il messaggio e' arrivato in chat
+  const userTypingEl = document.getElementById('user-typing');
+  if (userTypingEl) userTypingEl.classList.remove('visible');
 
   setMode('thinking');
   document.getElementById('typing').classList.add('visible');
@@ -3289,8 +3292,6 @@ async function _pttStart(opts = {}) {
     scrollToBottom();
     // transcribeAndProcess gestisce trascrizione, allucinazioni e stato finale
     await transcribeAndProcess(blob);
-    // Nascondi quando la trascrizione arriva
-    if (userTypingEl) userTypingEl.classList.remove('visible');
   };
 
   try {
