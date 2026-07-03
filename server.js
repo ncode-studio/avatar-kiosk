@@ -71,6 +71,8 @@ const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 const AVATAR_NAME  = process.env.AVATAR_NAME  || 'Sofia';
 const DEFAULT_SYSTEM_PROMPT = process.env.AVATAR_SYSTEM_PROMPT ||
   `Sei ${AVATAR_NAME}, un'assistente virtuale professionale su un totem interattivo. Rispondi in modo chiaro, conciso e amichevole. Max 3 frasi.`;
+const DEFAULT_GREETING   = process.env.AVATAR_GREETING ||
+  'Ciao sono {{nome}}, il tuo assistente personale. Come posso aiutarti?';
 const DEFAULT_VOICE_ID   = process.env.ELEVENLABS_VOICE_ID || '';
 const DEFAULT_STT_MODEL  = process.env.STT_MODEL    || 'whisper-1';
 const DEFAULT_STT_LANG   = process.env.STT_LANGUAGE || 'it';
@@ -321,20 +323,52 @@ app.get('/api/admin/avatars', (req, res) => {
   res.json(avatars);
 });
 
+// Campi NON clonati dal template (AI + identità): restano ai default o li imposta il wizard.
+const AVATAR_CLONE_EXCLUDE = new Set([
+  'id', 'created_at', 'name', 'label', 'published', 'greeting_text',
+  'ai_provider', 'ai_max_tokens', 'anthropic_api_key', 'anthropic_model', 'openai_api_key', 'openai_model',
+  'avatar_mode', 'webhook_url', 'webhook_input_template', 'webhook_output_field', 'webhook_headers', 'webhook_say_token',
+  'mcp_url', 'mcp_headers', 'mcp_tool_filter', 'mcp_skip_rewrite',
+  'api_base_url', 'api_token', 'api_type', 'api_spec_url', 'api_tool_filter', 'api_tools_cache',
+  'tavily_api_key', 'tavily_enabled',
+]);
+
 app.post('/api/admin/avatars', (req, res) => {
   const id = uuidv4().split('-')[0]; // ID corto
-  const { name = 'Nuovo Avatar', voice_id = '', system_prompt = DEFAULT_SYSTEM_PROMPT,
-          background = '#0a0a0f' } = req.body;
-  db.prepare(`INSERT INTO avatars (id, name, voice_id, system_prompt, background,
-              chat_font_size, idle_font_size, mic_icon_size, audio_icon_size, chat_bottom,
-              mic_icon, mic_icon_disabled, audio_icon, audio_icon_disabled,
-              mic_bg_color, mic_disabled_color, mic_border_color, mic_border_disabled_color,
-              audio_bg_color, audio_disabled_color, audio_border_color, audio_border_disabled_color)
-              VALUES (?, ?, ?, ?, ?, 1.1, 1.1, 100, 100, 100,
-              'icons/syyvs2jk_mic_icon.png', 'icons/syyvs2jk_mic_icon_disabled.png',
-              'icons/syyvs2jk_audio_icon.png', 'icons/syyvs2jk_audio_icon_disabled.png',
-              'rgba(250,250,250,0.70)', 'rgba(222,222,222,0.23)', 'rgba(255,255,255,0.79)', 'rgba(250,250,250,0.71)',
-              'rgba(255,255,255,0.71)', 'rgba(255,255,255,0.22)', 'rgba(255,255,255,0.75)', 'rgba(255,255,255,0.71)')`).run(id, name, voice_id, system_prompt, background);
+  const { name = 'Nuovo Avatar', voice_id, system_prompt, background } = req.body;
+
+  // Template = avatar già configurato in locale (il più recente pubblicato, poi il più recente).
+  // Il nuovo avatar eredita TUTTA la sua configurazione (icone, colori, idle, camera, VAD, modello 3D…)
+  // tranne i campi AI/identità in AVATAR_CLONE_EXCLUDE. Il modello 3D viene clonato: se il wizard
+  // non ne carica uno nuovo, il nuovo avatar usa quello dell'avatar esistente.
+  const template = db.prepare("SELECT * FROM avatars WHERE published = 1 ORDER BY created_at DESC LIMIT 1").get()
+                || db.prepare("SELECT * FROM avatars ORDER BY created_at DESC LIMIT 1").get();
+
+  if (template) {
+    const row = { id, name, label: name, greeting_text: DEFAULT_GREETING };
+    for (const [k, v] of Object.entries(template)) {
+      if (!AVATAR_CLONE_EXCLUDE.has(k)) row[k] = v;
+    }
+    if (voice_id     !== undefined) row.voice_id     = voice_id;
+    if (system_prompt !== undefined) row.system_prompt = system_prompt;
+    if (background   !== undefined) row.background    = background;
+    const keys = Object.keys(row);
+    db.prepare(`INSERT INTO avatars (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`)
+      .run(...keys.map(k => row[k]));
+  } else {
+    // Nessun avatar esistente: default hardcoded (primo avatar in assoluto).
+    db.prepare(`INSERT INTO avatars (id, name, voice_id, system_prompt, background, greeting_text,
+                chat_font_size, idle_font_size, mic_icon_size, audio_icon_size, chat_bottom,
+                mic_icon, mic_icon_disabled, audio_icon, audio_icon_disabled,
+                mic_bg_color, mic_disabled_color, mic_border_color, mic_border_disabled_color,
+                audio_bg_color, audio_disabled_color, audio_border_color, audio_border_disabled_color)
+                VALUES (?, ?, ?, ?, ?, ?, 1.1, 1.1, 100, 100, 100,
+                'icons/syyvs2jk_mic_icon.png', 'icons/syyvs2jk_mic_icon_disabled.png',
+                'icons/syyvs2jk_audio_icon.png', 'icons/syyvs2jk_audio_icon_disabled.png',
+                'rgba(250,250,250,0.70)', 'rgba(222,222,222,0.23)', 'rgba(255,255,255,0.79)', 'rgba(250,250,250,0.71)',
+                'rgba(255,255,255,0.71)', 'rgba(255,255,255,0.22)', 'rgba(255,255,255,0.75)', 'rgba(255,255,255,0.71)')`)
+      .run(id, name, voice_id || '', system_prompt || DEFAULT_SYSTEM_PROMPT, background || '#0a0a0f', DEFAULT_GREETING);
+  }
   res.json(db.prepare('SELECT * FROM avatars WHERE id = ?').get(id));
 });
 

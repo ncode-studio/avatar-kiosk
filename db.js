@@ -113,7 +113,7 @@ db.exec(`
     mic_wave_color    TEXT DEFAULT '#ffffff',
     audio_wave_color  TEXT DEFAULT '#ffffff',
     theme             TEXT DEFAULT 'viola',
-    greeting_text           TEXT DEFAULT '',
+    greeting_text           TEXT DEFAULT 'Ciao sono {{nome}}, il tuo assistente personale. Come posso aiutarti?',
     vad_threshold           REAL    DEFAULT 0.012,
     vad_silence_duration    INTEGER DEFAULT 1300,
     vad_min_speech_duration INTEGER DEFAULT 150,
