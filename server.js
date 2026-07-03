@@ -359,6 +359,7 @@ app.put('/api/admin/avatars/:id', (req, res) => {
                   'vad_threshold','vad_silence_duration','vad_min_speech_duration','vad_min_blob_size','vad_wake_timeout',
                   'vad_noise_mult','stt_prompt',
                   'mcp_url','mcp_headers','mcp_tool_filter','mcp_skip_rewrite','tavily_api_key','tavily_enabled',
+                  'api_base_url','api_token','api_type','api_spec_url','api_tool_filter','api_tools_cache',
                   'startup_action','startup_mcp_tool','startup_mcp_args','startup_api_url','startup_api_method','startup_api_headers','startup_api_body','startup_api_output_field',
                   'mic_bubble_visible','mic_bubble_text','mic_bubble_x','mic_bubble_y',
                   'mic_bubble_font','mic_bubble_font_size','mic_bubble_bg_color','mic_bubble_border_color','mic_bubble_border_radius','mic_bubble_bg_image','mic_bubble_width','mic_bubble_height',
@@ -1338,6 +1339,28 @@ app.post('/api/admin/mcp-test', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Route: Discovery OpenAPI/Swagger per modalità 'api' ──────────────────────
+app.post('/api/admin/api-discover', requireAdmin, async (req, res) => {
+  try {
+    const { baseUrl, token, specUrl } = req.body;
+    if (!baseUrl?.trim() && !specUrl?.trim()) return res.status(400).json({ error: 'URL istanza o URL spec mancante' });
+    const found = await discoverApi(baseUrl, token, specUrl);
+    if (!found.operations.length) return res.status(422).json({ error: 'Nessuna operazione riconosciuta' });
+    // cache: baseUrl + operazioni (senza il token, che resta nella colonna api_token)
+    res.json({
+      source: found.source,
+      specUrl: found.specUrl,
+      title: found.title,
+      baseUrl: found.baseUrl,
+      count: found.operations.length,
+      tools: found.operations.map(o => ({ name: o.name, description: o.description, method: o.method, path: o.pathTemplate })),
+      cache: JSON.stringify({ baseUrl: found.baseUrl, operations: found.operations }),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Route: Webhook "say" — inietta frase nell'avatar ────────────────────────
 app.post('/api/avatar/:id/say', (req, res) => {
   const { text, token } = req.body;
@@ -1422,6 +1445,180 @@ function getNestedField(obj, path) {
     const idx = Number(k);
     return Array.isArray(cur) && !isNaN(idx) ? cur[idx] : cur[k];
   }, obj);
+}
+
+// ─── Modalità 'api': discovery + esecuzione OpenAPI/Swagger ───────────────────
+const API_SPEC_PATHS = ['/openapi.json', '/swagger.json', '/v3/api-docs', '/api-docs', '/swagger/v1/swagger.json', '/api/openapi.json'];
+
+function apiAuthHeaders(token) {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+function sanitizeToolName(s) {
+  return String(s || 'op').replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 64) || 'op';
+}
+
+// Scarica lo spec OpenAPI/Swagger. Se specUrl è dato lo usa, altrimenti prova i path comuni sotto baseUrl.
+async function discoverOpenApiSpec(baseUrl, token, specUrl) {
+  const base = (baseUrl || '').replace(/\/+$/, '');
+  const candidates = specUrl ? [specUrl] : API_SPEC_PATHS.map(p => base + p);
+  const errors = [];
+  for (const url of candidates) {
+    try {
+      const r = await fetch(url, { headers: { Accept: 'application/json', ...apiAuthHeaders(token) } });
+      if (!r.ok) { errors.push(`${url} → ${r.status}`); continue; }
+      const text = await r.text();
+      let spec; try { spec = JSON.parse(text); } catch { errors.push(`${url} → non JSON`); continue; }
+      if (spec && (spec.openapi || spec.swagger) && spec.paths) return { spec, specUrl: url };
+      errors.push(`${url} → non è uno spec OpenAPI/Swagger`);
+    } catch (e) { errors.push(`${url} → ${e.message}`); }
+  }
+  throw new Error(`Nessuno spec OpenAPI/Swagger trovato. Tentativi: ${errors.slice(0, 6).join(' | ')}`);
+}
+
+// Ricava la base URL delle chiamate dallo spec (OpenAPI3 servers / Swagger2 host+basePath), con fallback.
+function resolveApiBaseUrl(spec, specUrl, fallback) {
+  try {
+    if (Array.isArray(spec.servers) && spec.servers[0]?.url) {
+      const u = spec.servers[0].url;
+      if (/^https?:\/\//i.test(u)) return u.replace(/\/+$/, '');
+      return (new URL(u, specUrl)).toString().replace(/\/+$/, ''); // server relativo
+    }
+    if (spec.host) { // Swagger 2.0
+      const scheme = (spec.schemes && spec.schemes[0]) || (specUrl.startsWith('https') ? 'https' : 'http');
+      return `${scheme}://${spec.host}${spec.basePath || ''}`.replace(/\/+$/, '');
+    }
+  } catch {}
+  return (fallback || '').replace(/\/+$/, '');
+}
+
+// Converte lo spec in una lista di operazioni/tool.
+function parseOpenApiSpec(spec, specUrl, fallbackBase) {
+  const baseUrl = resolveApiBaseUrl(spec, specUrl, fallbackBase);
+  const METHODS = ['get', 'post', 'put', 'patch', 'delete'];
+  const ops = [];
+  const seen = new Set();
+  for (const [pathTemplate, item] of Object.entries(spec.paths || {})) {
+    const sharedParams = Array.isArray(item.parameters) ? item.parameters : [];
+    for (const method of METHODS) {
+      const op = item[method];
+      if (!op) continue;
+      let name = sanitizeToolName(op.operationId || `${method}_${pathTemplate}`);
+      while (seen.has(name)) name = sanitizeToolName(name + '_' + ops.length);
+      seen.add(name);
+      const params = [...sharedParams, ...(Array.isArray(op.parameters) ? op.parameters : [])];
+      const properties = {}, required = [], paramIn = {};
+      for (const p of params) {
+        if (!p || !p.name || p.in === 'header' || p.in === 'cookie') continue;
+        properties[p.name] = { ...(p.schema || { type: 'string' }), description: p.description || '' };
+        paramIn[p.name] = p.in; // path | query
+        if (p.required) required.push(p.name);
+      }
+      // requestBody (JSON) → i campi diventano argomenti top-level (in body)
+      const bodyFields = [];
+      const bodySchema = op.requestBody?.content?.['application/json']?.schema;
+      if (bodySchema && bodySchema.type === 'object' && bodySchema.properties) {
+        for (const [k, v] of Object.entries(bodySchema.properties)) {
+          if (properties[k]) continue;
+          properties[k] = v;
+          paramIn[k] = 'body';
+          bodyFields.push(k);
+        }
+        if (Array.isArray(bodySchema.required)) required.push(...bodySchema.required.filter(k => !required.includes(k)));
+      }
+      ops.push({
+        name,
+        description: (op.summary || op.description || `${method.toUpperCase()} ${pathTemplate}`).slice(0, 400),
+        method: method.toUpperCase(),
+        pathTemplate,
+        paramIn,
+        hasBody: bodyFields.length > 0 || (bodySchema && !bodyFields.length),
+        inputSchema: { type: 'object', properties, required: [...new Set(required)] },
+      });
+    }
+  }
+  return { baseUrl, operations: ops };
+}
+
+// Ricava lo spec parsato per un avatar: usa la cache se presente, altrimenti fa discovery live.
+async function getApiSpecForAvatar(avatar) {
+  const token = avatar.api_token || '';
+  const cache = (avatar.api_tools_cache || '').trim();
+  if (cache) {
+    try {
+      const parsed = JSON.parse(cache);
+      if (parsed?.operations?.length) return { baseUrl: parsed.baseUrl, token, operations: parsed.operations };
+    } catch {}
+  }
+  const found = await discoverApi(avatar.api_base_url, token, avatar.api_spec_url);
+  return { baseUrl: found.baseUrl, token, operations: found.operations };
+}
+
+// Esegue un'operazione (tool) contro l'API reale.
+async function execApiOperation(apiSpec, name, args) {
+  const op = apiSpec.operations.find(o => o.name === name);
+  if (!op) throw new Error(`Operazione '${name}' non trovata`);
+  args = args || {};
+  let path = op.pathTemplate;
+  const query = new URLSearchParams();
+  const body = {};
+  for (const [k, v] of Object.entries(args)) {
+    const loc = op.paramIn[k];
+    if (loc === 'path') path = path.replace(new RegExp(`\\{${k}\\}`, 'g'), encodeURIComponent(v));
+    else if (loc === 'query') { if (v != null) query.append(k, v); }
+    else if (loc === 'body') body[k] = v;
+    else if (v != null) query.append(k, v); // default: query
+  }
+  let url = apiSpec.baseUrl.replace(/\/+$/, '') + path;
+  const qs = query.toString();
+  if (qs) url += (url.includes('?') ? '&' : '?') + qs;
+  const opts = { method: op.method, headers: { Accept: 'application/json', ...apiAuthHeaders(apiSpec.token) } };
+  if (op.method !== 'GET' && op.method !== 'HEAD' && Object.keys(body).length) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(url, opts);
+  const text = await r.text();
+  if (!r.ok) return `HTTP ${r.status}: ${text.slice(0, 500)}`;
+  return text.length > 4000 ? text.slice(0, 4000) + '…[troncato]' : text;
+}
+
+// ─── Adapter servizi noti (senza OpenAPI): Home Assistant ─────────────────────
+function buildHomeAssistantOps(baseUrl) {
+  const b = baseUrl.replace(/\/+$/, '');
+  return {
+    title: 'Home Assistant',
+    baseUrl: b,
+    operations: [
+      { name: 'get_states', description: 'Elenca tutte le entità di Home Assistant con il loro stato e attributi attuali.', method: 'GET', pathTemplate: '/api/states', paramIn: {}, inputSchema: { type: 'object', properties: {} } },
+      { name: 'get_state', description: "Ottieni lo stato di una specifica entità (es. 'light.soggiorno', 'sensor.temperatura').", method: 'GET', pathTemplate: '/api/states/{entity_id}', paramIn: { entity_id: 'path' }, inputSchema: { type: 'object', properties: { entity_id: { type: 'string', description: "ID entità, es. 'light.soggiorno'" } }, required: ['entity_id'] } },
+      { name: 'list_services', description: 'Elenca i servizi disponibili raggruppati per dominio.', method: 'GET', pathTemplate: '/api/services', paramIn: {}, inputSchema: { type: 'object', properties: {} } },
+      { name: 'call_service', description: "Esegui un servizio, es. accendere/spegnere/regolare un dispositivo. Esempio: domain='light', service='turn_on', entity_id='light.soggiorno'.", method: 'POST', pathTemplate: '/api/services/{domain}/{service}', paramIn: { domain: 'path', service: 'path', entity_id: 'body' }, inputSchema: { type: 'object', properties: { domain: { type: 'string', description: "Dominio del servizio, es. 'light', 'switch', 'climate', 'cover'" }, service: { type: 'string', description: "Servizio, es. 'turn_on', 'turn_off', 'toggle'" }, entity_id: { type: 'string', description: "ID entità su cui agire, es. 'light.soggiorno'" } }, required: ['domain', 'service'] } },
+    ],
+  };
+}
+
+async function detectHomeAssistant(baseUrl, token) {
+  const b = (baseUrl || '').replace(/\/+$/, '');
+  if (!b) return null;
+  try {
+    const r = await fetch(b + '/api/', { headers: apiAuthHeaders(token) });
+    if (!r.ok) return null;
+    const t = await r.text();
+    if (/API running/i.test(t)) return buildHomeAssistantOps(b);
+  } catch {}
+  return null;
+}
+
+// Discovery unificata: prima OpenAPI/Swagger, poi servizi noti (Home Assistant).
+async function discoverApi(baseUrl, token, specUrl) {
+  try {
+    const { spec, specUrl: found } = await discoverOpenApiSpec(baseUrl, token, specUrl);
+    const parsed = parseOpenApiSpec(spec, found, baseUrl);
+    if (parsed.operations.length) return { source: 'openapi', specUrl: found, title: spec.info?.title || '', baseUrl: parsed.baseUrl, operations: parsed.operations };
+  } catch (e) { /* nessun OpenAPI: prova i servizi noti */ }
+  const ha = await detectHomeAssistant(baseUrl, token);
+  if (ha) return { source: 'home_assistant', specUrl: '', title: ha.title, baseUrl: ha.baseUrl, operations: ha.operations };
+  throw new Error('Nessuno spec OpenAPI/Swagger trovato e nessun servizio noto riconosciuto (provato anche Home Assistant — verifica URL e token).');
 }
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────
@@ -1529,16 +1726,18 @@ app.post('/api/chat', async (req, res) => {
     }
 
     // ── Modalità Embedded (Claude) ────────────────────────────────────────────
+    const sid = sessionId || uuidv4();
     const baseName   = avatar?.name || AVATAR_NAME;
     const basePrompt = (avatar?.system_prompt || DEFAULT_SYSTEM_PROMPT)
       .replace(/\{\{nome\}\}/gi, baseName)
       .replace(/\{\{sessionID\}\}/gi, kioskSessionId || sid);
-    const mcpToolPrefix = (avatar?.avatar_mode === 'mcp' && avatar?.mcp_url?.trim())
+    const _usesExtTools = (avatar?.avatar_mode === 'mcp' && avatar?.mcp_url?.trim())
+      || (avatar?.avatar_mode === 'api' && avatar?.api_base_url?.trim());
+    const mcpToolPrefix = _usesExtTools
       ? `Hai accesso a strumenti esterni (tool) che DEVI usare per rispondere alle domande dell'utente. Non rispondere mai basandoti sulla tua conoscenza interna: usa sempre i tool disponibili per recuperare le informazioni richieste. Se nessun tool è appropriato, dillo esplicitamente.\n\n`
       : '';
     const systemPrompt = `Il tuo nome è ${baseName}. Non presentarti ad ogni risposta.\n\n${mcpToolPrefix}${basePrompt}`;
 
-    const sid = sessionId || uuidv4();
     if (!sessions.has(sid)) sessions.set(sid, []);
     const history = sessions.get(sid);
     history.push({ role: 'user', content: message });
@@ -1639,6 +1838,28 @@ app.post('/api/chat', async (req, res) => {
 
     // Modalità MCP: AI Agent usa tutti i tool (no filtro) o solo quelli filtrati
 
+    // ── Modalità API: tool da spec OpenAPI/Swagger ───────────────────────────
+    let apiTools = [];
+    let apiSpec = null;
+    if (avatar?.avatar_mode === 'api' && avatar?.api_base_url?.trim()) {
+      try {
+        apiSpec = await getApiSpecForAvatar(avatar);
+        const apiFilter = (avatar?.api_tool_filter || '').split(',').map(s => s.trim()).filter(Boolean);
+        apiTools = apiSpec.operations
+          .filter(op => apiFilter.length === 0 || apiFilter.includes(op.name))
+          .map(op => ({ name: op.name, description: op.description, inputSchema: op.inputSchema }));
+        console.log(`[API-CHAT] avatar=${avatarId} tool disponibili: ${apiTools.length}`);
+      } catch (e) { console.warn('[API-CHAT] setup FAILED:', e.message); }
+    }
+
+    // ── Tool esterni unificati (MCP oppure API) ──────────────────────────────
+    const isApiMode = avatar?.avatar_mode === 'api';
+    const forceTools = avatar?.avatar_mode === 'mcp' || isApiMode;
+    const extTools = isApiMode ? apiTools : mcpTools;
+    async function callExtTool(name, args) {
+      return isApiMode ? execApiOperation(apiSpec, name, args) : callMcpTool(name, args);
+    }
+
     let reply;
     let chatTokensIn = 0, chatTokensOut = 0;
 
@@ -1647,7 +1868,7 @@ app.post('/api/chat', async (req, res) => {
       const aiModel = avatar?.openai_model   || 'gpt-4o-mini';
       const msgs    = [{ role: 'system', content: systemPrompt }, ...history];
       const oaiTools = [
-        ...mcpTools.map(t => ({ type: 'function', function: { name: t.name, description: t.description || '', parameters: t.inputSchema || { type: 'object', properties: {} } } })),
+        ...extTools.map(t => ({ type: 'function', function: { name: t.name, description: t.description || '', parameters: t.inputSchema || { type: 'object', properties: {} } } })),
         ...TAVILY_TOOL_DEF_OAI,
       ];
       let iterMsgs = [...msgs];
@@ -1655,7 +1876,7 @@ app.post('/api/chat', async (req, res) => {
         const body = { model: aiModel, max_tokens: aiTokens, messages: iterMsgs };
         if (oaiTools.length) {
           body.tools = oaiTools;
-          if (i === 0 && avatar?.avatar_mode === 'mcp') body.tool_choice = 'required';
+          if (i === 0 && forceTools) body.tool_choice = 'required';
         }
         const r = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -1680,7 +1901,7 @@ app.post('/api/chat', async (req, res) => {
             const args = JSON.parse(tc.function.arguments || '{}');
             result = tc.function.name === 'search_web'
               ? await tavilySearch(args.query)
-              : await callMcpTool(tc.function.name, args);
+              : await callExtTool(tc.function.name, args);
           } catch (e) { result = `Errore: ${e.message}`; }
           toolResults.push({ role: 'tool', tool_call_id: tc.id, content: result });
         }
@@ -1693,7 +1914,7 @@ app.post('/api/chat', async (req, res) => {
       const aiClient = aiKey !== process.env.ANTHROPIC_API_KEY
         ? new Anthropic({ apiKey: aiKey }) : anthropic;
       const claudeTools = [
-        ...mcpTools.map(t => ({ name: t.name, description: t.description || '', input_schema: t.inputSchema || { type: 'object', properties: {} } })),
+        ...extTools.map(t => ({ name: t.name, description: t.description || '', input_schema: t.inputSchema || { type: 'object', properties: {} } })),
         ...TAVILY_TOOL_DEF_CLAUDE,
       ];
       let iterMsgs = [...history];
@@ -1702,7 +1923,7 @@ app.post('/api/chat', async (req, res) => {
         if (claudeTools.length) {
           params.tools = claudeTools;
           // In modalità MCP, forza l'uso dei tool al primo turno
-          if (i === 0 && avatar?.avatar_mode === 'mcp') params.tool_choice = { type: 'any' };
+          if (i === 0 && forceTools) params.tool_choice = { type: 'any' };
         }
         const response = await aiClient.messages.create(params);
         chatTokensIn  += response.usage?.input_tokens  || 0;
@@ -1721,13 +1942,13 @@ app.post('/api/chat', async (req, res) => {
           try {
             result = block.name === 'search_web'
               ? await tavilySearch(block.input.query)
-              : await callMcpTool(block.name, block.input);
+              : await callExtTool(block.name, block.input);
           } catch (e) { result = `Errore: ${e.message}`; }
           toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
           toolOutputs.push({ name: block.name, content: String(result) });
         }
         // Skip rielaborazione: usa direttamente l'output del tool come risposta finale
-        if (avatar?.mcp_skip_rewrite && toolOutputs.length > 0) {
+        if (avatar?.avatar_mode === 'mcp' && avatar?.mcp_skip_rewrite && toolOutputs.length > 0) {
           reply = toolOutputs.map(t => t.content).join('\n\n').trim();
           console.log(`[MCP-SKIP] mcp_skip_rewrite attivo → uso output tool direttamente (${reply.length} chars)`);
           break;

@@ -935,7 +935,7 @@
             <button id="mode-embedded-btn" class="btn btn-neutral" onclick="setAvatarMode('embedded')" style="flex:1"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg> Embedded</button>
             <button id="mode-webhook-btn"  class="btn btn-neutral" onclick="setAvatarMode('webhook')"  style="flex:1"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Webhook</button>
             <button id="mode-mcp-btn"     class="btn btn-neutral" onclick="setAvatarMode('mcp')"     style="flex:1"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg> MCP</button>
-            <button id="mode-apply-btn" class="btn btn-primary" onclick="applyAvatarMode()" style="display:none"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> Applica</button>
+            <button id="mode-api-btn"     class="btn btn-neutral" onclick="setAvatarMode('api')"     style="flex:1"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg> API</button>
           </div>
         </div>
         <div id="webhook-fields" style="display:none;flex-direction:column;gap:12px;margin-top:4px">
@@ -1029,6 +1029,40 @@
           <button class="btn btn-neutral" onclick="testMcp()"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Testa connessione MCP</button>
           <div id="mcp-test-result" style="font-size:.78rem;color:var(--text-dim)"></div>
         </div>
+
+        <div id="api-fields" style="display:none;flex-direction:column;gap:12px;margin-top:4px">
+
+          <div class="field">
+            <label>URL istanza</label>
+            <input type="text" id="f-api-base-url" placeholder="https://tua-istanza.example.com"/>
+            <div class="field-hint" style="margin-top:4px;font-size:11px;color:#888">URL base del servizio. Il sistema cerca automaticamente uno spec OpenAPI/Swagger e ne ricava le API, che l'AI userà come strumenti.</div>
+          </div>
+
+          <div class="field">
+            <label>Token <span style="font-weight:400;color:#888">(opzionale)</span></label>
+            <input type="text" id="f-api-token" placeholder="token di autenticazione (Bearer)"/>
+            <div class="field-hint" style="margin-top:4px;font-size:11px;color:#888">Inviato come <code>Authorization: Bearer &lt;token&gt;</code> sia nella discovery che nelle chiamate.</div>
+          </div>
+
+          <div class="webhook-block">
+            <div class="webhook-block-title">URL spec <span style="font-weight:400;color:#888">(opzionale)</span></div>
+            <input type="text" id="f-api-spec-url" class="mono-input" placeholder="https://.../openapi.json"/>
+            <div class="webhook-block-hint">Solo se l'auto-detect non trova lo spec. Path provati automaticamente: <code>/openapi.json</code>, <code>/swagger.json</code>, <code>/v3/api-docs</code>, <code>/api-docs</code>…</div>
+          </div>
+
+          <button class="btn btn-neutral" onclick="discoverApi()"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Rileva API</button>
+          <div id="api-discover-result" style="font-size:.78rem;color:var(--text-dim)"></div>
+
+          <div class="webhook-block">
+            <div class="webhook-block-title">Filtro tool</div>
+            <input type="text" id="f-api-tool-filter" class="mono-input" placeholder="operazione_a, operazione_b"/>
+            <div class="webhook-block-hint">Nomi delle operazioni da esporre all'AI, separati da virgola. Vuoto = tutte quelle rilevate.</div>
+          </div>
+
+          <input type="hidden" id="f-api-tools-cache"/>
+        </div>
+
+        <button id="mode-apply-btn" class="btn btn-primary" onclick="applyAvatarMode()" style="display:none;width:100%;margin-top:12px"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> Applica modalità</button>
 
         </div><!-- /.section Modalità AI -->
 
@@ -2384,6 +2418,12 @@ function selectAvatar(id) {
   document.getElementById('f-mcp-tool-filter').value  = a.mcp_tool_filter  || '';
   document.getElementById('f-mcp-skip-rewrite').checked = (a.mcp_skip_rewrite ?? 0) !== 0;
   document.getElementById('mcp-test-result').textContent = '';
+  document.getElementById('f-api-base-url').value    = a.api_base_url    || '';
+  document.getElementById('f-api-token').value       = a.api_token       || '';
+  document.getElementById('f-api-spec-url').value    = a.api_spec_url    || '';
+  document.getElementById('f-api-tool-filter').value = a.api_tool_filter || '';
+  document.getElementById('f-api-tools-cache').value = a.api_tools_cache || '';
+  document.getElementById('api-discover-result').innerHTML = renderApiCacheSummary(a.api_tools_cache);
   setTimeout(() => { autoFormatJSON(document.getElementById('f-mcp-headers')); }, 0);
   document.getElementById('f-name').value              = a.name;
   document.getElementById('f-label').value             = a.label || '';
@@ -3110,6 +3150,12 @@ async function saveAvatar() {
     mcp_headers:         (() => { const v = document.getElementById('f-mcp-headers').value.trim() || '{}'; try { const p = JSON.parse(v); const f = JSON.stringify(p, null, 2); document.getElementById('f-mcp-headers').value = f; return f; } catch { return v; } })(),
     mcp_tool_filter:     document.getElementById('f-mcp-tool-filter').value.trim(),
     mcp_skip_rewrite:   document.getElementById('f-mcp-skip-rewrite').checked ? 1 : 0,
+    api_base_url:        document.getElementById('f-api-base-url').value.trim(),
+    api_token:           document.getElementById('f-api-token').value.trim(),
+    api_type:            'auto',
+    api_spec_url:        document.getElementById('f-api-spec-url').value.trim(),
+    api_tool_filter:     document.getElementById('f-api-tool-filter').value.trim(),
+    api_tools_cache:     document.getElementById('f-api-tools-cache').value || '',
     name:              document.getElementById('f-name').value,
     label:             document.getElementById('f-label').value.trim() || document.getElementById('f-name').value,
     webhook_say_token: document.getElementById('f-webhook-say-token').value.trim(),
@@ -3802,6 +3848,7 @@ function setAvatarMode(mode) {
   setAvatarMode._current = mode;
   document.getElementById('webhook-fields').style.display = mode === 'webhook' ? 'flex' : 'none';
   document.getElementById('mcp-fields').style.display     = mode === 'mcp'     ? 'flex' : 'none';
+  document.getElementById('api-fields').style.display     = mode === 'api'     ? 'flex' : 'none';
   _refreshModeBtns();
 }
 setAvatarMode._current  = 'embedded';
@@ -3810,7 +3857,7 @@ setAvatarMode._applied  = 'embedded';
 function _refreshModeBtns() {
   const sel = setAvatarMode._current;
   const app = setAvatarMode._applied;
-  ['embedded','webhook','mcp'].forEach(m => {
+  ['embedded','webhook','mcp','api'].forEach(m => {
     const btn = document.getElementById(`mode-${m}-btn`);
     btn.className = 'btn btn-neutral';
     if (m === app) btn.classList.add('btn-mode-applied');
@@ -3870,6 +3917,39 @@ async function testMcp() {
     const tools = Array.isArray(res.tools) ? res.tools : [];
     const names = tools.map(t => t.name).join(', ') || '(nessun tool)';
     result.textContent = `✓ Connesso — ${tools.length} tool disponibili: ${names}`;
+  } catch (e) {
+    result.style.color = 'var(--error)';
+    result.textContent = e.message;
+  }
+}
+
+function renderApiCacheSummary(cache) {
+  if (!cache) return '';
+  try {
+    const p = JSON.parse(cache);
+    const n = p.operations?.length || 0;
+    if (!n) return '';
+    const names = p.operations.slice(0, 12).map(o => o.name).join(', ');
+    return `<span style="color:var(--success)">✓ ${n} operazioni in cache</span> · base <code>${p.baseUrl || '?'}</code><br><span style="color:var(--text-dim)">${names}${n > 12 ? '…' : ''}</span>`;
+  } catch { return ''; }
+}
+
+async function discoverApi() {
+  const baseUrl = document.getElementById('f-api-base-url').value.trim();
+  const token   = document.getElementById('f-api-token').value.trim();
+  const specUrl = document.getElementById('f-api-spec-url').value.trim();
+  const result  = document.getElementById('api-discover-result');
+  if (!baseUrl && !specUrl) { result.style.color = 'var(--error)'; result.textContent = 'Inserisci l\'URL istanza (o l\'URL spec)'; return; }
+  result.style.color = 'var(--text-dim)';
+  result.textContent = 'Rilevamento API in corso...';
+  try {
+    const res = await api.post('/api/admin/api-discover', { baseUrl, token, specUrl });
+    document.getElementById('f-api-tools-cache').value = res.cache || '';
+    result.style.color = 'var(--success)';
+    const names = (res.tools || []).slice(0, 15).map(t => t.name).join(', ');
+    const srcLabel = res.source === 'home_assistant' ? 'Home Assistant riconosciuto' : (res.title || 'OpenAPI/Swagger');
+    const origin = res.specUrl ? `spec: <code>${res.specUrl}</code>` : `servizio: <code>${res.source}</code>`;
+    result.innerHTML = `✓ ${srcLabel} — ${res.count} operazioni rilevate (${origin}, base: <code>${res.baseUrl}</code>)<br><span style="color:var(--text-dim)">${names}${res.count > 15 ? '…' : ''}</span><br><span style="color:var(--text-dim)">Ricordati di salvare l'avatar per memorizzarle.</span>`;
   } catch (e) {
     result.style.color = 'var(--error)';
     result.textContent = e.message;

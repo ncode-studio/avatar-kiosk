@@ -51,6 +51,12 @@ db.exec(`
     webhook_input_template TEXT DEFAULT '{"query":"{{query}}"}',
     webhook_output_field  TEXT DEFAULT 'response',
     webhook_headers       TEXT DEFAULT '{}',
+    api_base_url          TEXT DEFAULT '',
+    api_token             TEXT DEFAULT '',
+    api_type              TEXT DEFAULT 'auto',
+    api_spec_url          TEXT DEFAULT '',
+    api_tool_filter       TEXT DEFAULT '',
+    api_tools_cache       TEXT DEFAULT '',
     idle_disabled     INTEGER DEFAULT 0,
     idle_timeout      INTEGER DEFAULT 90,
     idle_icon         TEXT DEFAULT '🤖',
@@ -364,6 +370,20 @@ if (!existing.includes('startup_api_body'))
   db.exec("ALTER TABLE avatars ADD COLUMN startup_api_body TEXT DEFAULT ''")
 if (!existing.includes('startup_api_output_field'))
   db.exec("ALTER TABLE avatars ADD COLUMN startup_api_output_field TEXT DEFAULT ''")
+
+// Modalità 'api': istanza REST con discovery OpenAPI/Swagger, usata come tool dall'AI
+if (!existing.includes('api_base_url'))
+  db.exec("ALTER TABLE avatars ADD COLUMN api_base_url TEXT DEFAULT ''")
+if (!existing.includes('api_token'))
+  db.exec("ALTER TABLE avatars ADD COLUMN api_token TEXT DEFAULT ''")
+if (!existing.includes('api_type'))
+  db.exec("ALTER TABLE avatars ADD COLUMN api_type TEXT DEFAULT 'auto'")
+if (!existing.includes('api_spec_url'))
+  db.exec("ALTER TABLE avatars ADD COLUMN api_spec_url TEXT DEFAULT ''")
+if (!existing.includes('api_tool_filter'))
+  db.exec("ALTER TABLE avatars ADD COLUMN api_tool_filter TEXT DEFAULT ''")
+if (!existing.includes('api_tools_cache'))
+  db.exec("ALTER TABLE avatars ADD COLUMN api_tools_cache TEXT DEFAULT ''")
 
 // Tabella log richieste
 db.exec(`
