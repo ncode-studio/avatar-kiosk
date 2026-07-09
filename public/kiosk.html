@@ -2486,11 +2486,13 @@ async function processUserInput(text) {
   _userScrolledUp = false;
   scrollToBottom();
 
+  // Timeout per evitare blocchi indefiniti. In modalità MCP i tool possono
+  // essere lunghi (report, PDF, email) → 180s (nginx consente fino a 300s).
+  const _chatTimeoutMs = (CONFIG.chatTimeout || 180) * 1000;
   try {
     // ── 1. Claude ────────────────────────────────────────────────────────
-    // Timeout 60s per evitare blocchi indefiniti se l'AI non risponde
     const chatController = new AbortController();
-    const chatTimeout = setTimeout(() => chatController.abort(), 60000);
+    const chatTimeout = setTimeout(() => chatController.abort(), _chatTimeoutMs);
     const chatRes = await fetch(`${CONFIG.serverUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2532,7 +2534,7 @@ async function processUserInput(text) {
 
   } catch (err) {
     document.getElementById('typing').classList.remove('visible');
-    const msg = err.name === 'AbortError' ? 'Timeout: l\'AI non ha risposto entro 60 secondi' : err.message;
+    const msg = err.name === 'AbortError' ? `Timeout: l'AI non ha risposto entro ${Math.round(_chatTimeoutMs/1000)} secondi` : err.message;
     addToHistory('avatar', `⚠️ ${msg}`);
   } finally {
     stopProceduralLipSync();
