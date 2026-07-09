@@ -492,8 +492,10 @@ app.post('/api/admin/avatars/:id/upload-model', uploadFbx.single('model'), async
       const _arch = process.arch; // x64 | arm64 | arm
       console.log('[FBX] piattaforma:', _platform, _arch, '| fbx2gltf:', fbx2gltf || 'no');
 
-      // Prova FBX2glTF (solo su x64 — il binario npm non supporta ARM)
-      if (fbx2gltf && _arch === 'x64') {
+      // Prova FBX2glTF. Il binario npm è x64: su x64 gira nativo, su macOS arm64 gira
+      // via Rosetta 2. Su Linux arm non c'è Rosetta → fallisce e si passa ad assimp.
+      // FBX2glTF preserva tutte le mesh/skinning; assimp su FBX complessi ne perde molte.
+      if (fbx2gltf && (_arch === 'x64' || _platform === 'darwin')) {
         try {
           fs.accessSync(fbx2gltf, fs.constants.X_OK);
           console.log('[FBX] Uso fbx2gltf:', fbx2gltf);
@@ -507,25 +509,8 @@ app.post('/api/admin/avatars/:id/upload-model', uploadFbx.single('model'), async
         }
       }
 
-      // assimp (funziona bene su ARM64, rimuoviamo shadow plane dopo)
-      if (!converted) {
-        try {
-          const { exec } = await import('child_process');
-          console.log('[FBX] Provo assimp...');
-          await promisify(exec)(`assimp export "${tmpFile}" "${rawGlb}"`, { timeout: 120000 });
-          converted = fs.existsSync(rawGlb) && fs.statSync(rawGlb).size > 1024;
-          if (converted) {
-            console.log('[FBX] assimp OK — rimuovo shadow plane...');
-            await glbRemoveFlatMeshes(rawGlb);
-          } else {
-            console.error('[FBX] assimp non ha prodotto output GLB valido');
-          }
-        } catch (e) {
-          console.error('[FBX] assimp fallito:', e.message);
-        }
-      }
-
-      // Blender (ultimo tentativo)
+      // Blender (nativo anche su ARM Linux; converte fedelmente preservando mesh/skinning).
+      // Preferito ad assimp perché assimp su FBX complessi perde molte mesh in export.
       if (!converted) {
         console.log('[FBX] Provo Blender...');
         const blenderScript = `
@@ -542,10 +527,10 @@ print("Done")
         try {
           const { exec } = await import('child_process');
           const blenderCmd = `blender --background --python "${scriptFile}" -- "${tmpFile}" "${rawGlb.replace(/\.glb$/, '')}"`;
-          await promisify(exec)(blenderCmd, { timeout: 120000 });
+          await promisify(exec)(blenderCmd, { timeout: 180000 });
           const blenderOut = rawGlb.replace(/\.glb$/, '') + '.glb';
           if (fs.existsSync(blenderOut) && blenderOut !== rawGlb) fs.renameSync(blenderOut, rawGlb);
-          converted = fs.existsSync(rawGlb);
+          converted = fs.existsSync(rawGlb) && fs.statSync(rawGlb).size > 1024;
           if (converted) console.log('[FBX] Blender OK');
           else console.error('[FBX] Blender non ha prodotto output GLB');
         } catch (e) {
@@ -555,7 +540,26 @@ print("Done")
         }
       }
 
-      // Ultimo fallback: assimp (include shadow plane ma almeno converte)
+      // assimp (ultima spiaggia: converte quasi sempre ma su FBX riggati complessi può
+      // perdere mesh; rimuoviamo lo shadow plane dopo).
+      if (!converted) {
+        try {
+          const { exec } = await import('child_process');
+          console.log('[FBX] Provo assimp (fallback)...');
+          await promisify(exec)(`assimp export "${tmpFile}" "${rawGlb}"`, { timeout: 120000 });
+          converted = fs.existsSync(rawGlb) && fs.statSync(rawGlb).size > 1024;
+          if (converted) {
+            console.log('[FBX] assimp OK — rimuovo shadow plane...');
+            await glbRemoveFlatMeshes(rawGlb);
+          } else {
+            console.error('[FBX] assimp non ha prodotto output GLB valido');
+          }
+        } catch (e) {
+          console.error('[FBX] assimp fallito:', e.message);
+        }
+      }
+
+      // (assimp è già stato tentato sopra come fallback finale)
       fs.unlinkSync(tmpFile);
       if (!converted) return res.status(500).json({ error: 'Conversione FBX fallita. Esporta il modello in .glb o .gltf e caricalo direttamente.' });
     } else if (ext === 'glb') {
