@@ -589,6 +589,13 @@
     }
     .rt-editor:focus { outline:none; border-color:var(--accent, #6d28d9); }
     .rt-editor:empty:before { content:attr(data-placeholder); color:var(--text-dim, #888); }
+
+    .model-progress { height:6px; background:var(--border, #33333d); border-radius:3px; overflow:hidden; margin-top:8px; display:none; }
+    .model-progress.show { display:block; }
+    .model-progress > div { height:100%; width:0; background:var(--accent, #6d28d9); border-radius:3px; transition:width .2s ease; }
+    .model-progress.indet { position:relative; }
+    .model-progress.indet > div { width:40%; animation:mp-indet 1.1s ease-in-out infinite; }
+    @keyframes mp-indet { 0%{margin-left:-40%} 100%{margin-left:100%} }
   </style>
 </head>
 <body>
@@ -685,6 +692,7 @@
           <div id="wiz-model-label"><svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;display:inline-block;vertical-align:middle;margin-right:6px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Trascina un file .fbx / .glb / .gltf o clicca</div>
           <input type="file" id="wiz-model-input" accept=".fbx,.glb,.gltf" style="display:none"
             onchange="wizUploadModel(this.files[0])"/>
+          <div id="wiz-model-progress" class="model-progress"><div></div></div>
         </div>
         <div id="wiz-preview-wrap" style="display:none;margin-top:14px;border-radius:12px;overflow:hidden;border:1px solid var(--border);aspect-ratio:9/16;width:min(100%,280px);margin-left:auto;margin-right:auto;position:relative">
           <iframe id="wiz-preview-iframe" style="position:absolute;inset:0;width:1080px;height:1920px;border:none;transform-origin:top left" src="about:blank"></iframe>
@@ -2047,6 +2055,7 @@
             <input type="file" id="model-input" accept=".fbx,.glb,.gltf" style="display:none"
               onchange="uploadModel(this.files[0])"/>
           </div>
+          <div id="model-progress" class="model-progress"><div></div></div>
         </div>
 
         <div class="section">
@@ -3044,13 +3053,16 @@ function wizHandleModelDrop(e) {
 
 async function wizUploadModel(file) {
   if (!_wizAvatarId) { toast('Completa prima i passi precedenti', 'error'); return; }
-  document.getElementById('wiz-model-label').textContent = 'Conversione in corso…';
   document.getElementById('wiz-model-drop').style.opacity = '0.5';
-  const form = new FormData(); form.append('model', file);
-  const res  = await fetch(`/api/admin/avatars/${_wizAvatarId}/upload-model`, { method:'POST', body:form });
-  const data = await res.json();
+  let data;
+  try {
+    data = await _uploadModelCore(file, _wizAvatarId, 'wiz-model-label', 'wiz-model-progress', '');
+  } catch (e) {
+    document.getElementById('wiz-model-drop').style.opacity = '';
+    document.getElementById('wiz-model-label').innerHTML='<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;display:inline-block;vertical-align:middle;margin-right:6px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Trascina un file .fbx / .glb / .gltf o clicca';
+    toast('Errore: ' + e.message, 'error'); return;
+  }
   document.getElementById('wiz-model-drop').style.opacity = '';
-  if (!res.ok) { document.getElementById('wiz-model-label').innerHTML='<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;display:inline-block;vertical-align:middle;margin-right:6px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Trascina un file .fbx / .glb / .gltf o clicca'; toast('Errore: ' + data.error, 'error'); return; }
   document.getElementById('wiz-model-label').innerHTML = `<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--success);fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;display:inline-block;vertical-align:middle;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>${file.name}`;
   // Mostra preview
   const wrap    = document.getElementById('wiz-preview-wrap');
@@ -3354,20 +3366,73 @@ function handleModelDrop(e) {
   if (file) uploadModel(file);
 }
 
+// Barra di progresso: pct 0-100 oppure null = indeterminata
+function _setModelProgress(el, pct) {
+  if (!el) return;
+  el.classList.add('show');
+  const bar = el.firstElementChild;
+  if (pct == null) { el.classList.add('indet'); bar.style.width = '40%'; }
+  else { el.classList.remove('indet'); bar.style.width = Math.max(0, Math.min(100, pct)) + '%'; }
+}
+function _hideModelProgress(el) {
+  if (!el) return;
+  el.classList.remove('show', 'indet');
+  el.firstElementChild.style.width = '0';
+}
+
+// Upload modello con progresso: XHR per la % di upload + SSE per gli stadi server
+function _uploadModelCore(file, avatarId, labelId, progressId, query) {
+  return new Promise((resolve, reject) => {
+    const jobId = 'job_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const label = document.getElementById(labelId);
+    const prog  = document.getElementById(progressId);
+    const setTxt = t => { if (label) label.textContent = t; };
+    let es;
+    try {
+      es = new EventSource(`/api/admin/upload-progress/${jobId}`);
+      es.onmessage = e => {
+        let d; try { d = JSON.parse(e.data); } catch { return; }
+        if (d.stage === 'received')        { setTxt('⚙️ Elaborazione…'); _setModelProgress(prog, null); }
+        else if (d.stage === 'converting') { setTxt(`⚙️ Conversione modello${d.tool ? ' (' + d.tool + ')' : ''}…`); _setModelProgress(prog, null); }
+        else if (d.stage === 'compressing'){ setTxt(`🎨 Ottimizzazione texture ${d.done}/${d.total}…`); _setModelProgress(prog, d.total ? Math.round(d.done / d.total * 100) : null); }
+        else if (d.stage === 'finalizing') { setTxt('📦 Finalizzazione…'); _setModelProgress(prog, null); }
+      };
+      es.onerror = () => {}; // best-effort: se l'SSE cade, resta la % di upload
+    } catch {}
+    const xhr = new XMLHttpRequest();
+    const q = query ? `${query}&jobId=${jobId}` : `jobId=${jobId}`;
+    xhr.open('POST', `/api/admin/avatars/${avatarId}/upload-model?${q}`);
+    xhr.upload.onprogress = e => { if (e.lengthComputable) { const p = Math.round(e.loaded / e.total * 100); setTxt(`⬆️ Caricamento ${p}%`); _setModelProgress(prog, p); } };
+    xhr.upload.onload = () => { setTxt('⚙️ Elaborazione…'); _setModelProgress(prog, null); };
+    xhr.onload = () => {
+      if (es) es.close();
+      _hideModelProgress(prog);
+      let data = {}; try { data = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data.error || ('HTTP ' + xhr.status)));
+    };
+    xhr.onerror = () => { if (es) es.close(); _hideModelProgress(prog); reject(new Error('Errore di rete durante l\'upload')); };
+    const form = new FormData(); form.append('model', file);
+    xhr.send(form);
+  });
+}
+
 async function uploadModel(file) {
   if (!currentId) return toast('Salva prima l\'avatar', 'error');
   if (!/\.(fbx|glb|gltf)$/i.test(file?.name))
     return toast('Seleziona un file .fbx, .glb o .gltf', 'error');
   document.getElementById('model-input').value = '';
   document.getElementById('wiz-model-input').value = '';
-  document.getElementById('model-label').textContent = 'Conversione in corso...';
   const skipCompress = document.getElementById('f-skip-compress')?.checked ? '1' : '0';
   const texQuality = document.getElementById('s-texture-quality')?.value || '85';
-  const form = new FormData();
-  form.append('model', file);
-  const res = await fetch(`/api/admin/avatars/${currentId}/upload-model?skipCompress=${skipCompress}&texQuality=${texQuality}`, { method:'POST', body:form });
-  const data = await res.json();
-  if (!res.ok) { toast('Errore: ' + data.error, 'error'); return; }
+  let data;
+  try {
+    data = await _uploadModelCore(file, currentId, 'model-label', 'model-progress', `skipCompress=${skipCompress}&texQuality=${texQuality}`);
+  } catch (e) {
+    toast('Errore: ' + e.message, 'error');
+    document.getElementById('model-label').textContent = 'Trascina un file .fbx / .glb / .gltf o clicca';
+    return;
+  }
   document.getElementById('model-label').innerHTML = `<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--success);fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;display:inline-block;vertical-align:middle;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>${data.model_file}`;
   document.getElementById('model-drop').classList.add('has-file');
   const dur = data.animDuration;

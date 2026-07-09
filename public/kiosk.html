@@ -4121,8 +4121,29 @@ function loadGLBAvatar(url) {
       const model = gltf.scene;
 
       // Scala il modello per riempire il canvas
-      const box = new THREE.Box3().setFromObject(model);
-      const size = box.getSize(new THREE.Vector3());
+      model.updateMatrixWorld(true);
+      let box = new THREE.Box3().setFromObject(model);
+      let size = box.getSize(new THREE.Vector3());
+      // Le SkinnedMesh non riflettono la posa in setFromObject (usa la geometria a riposo).
+      // In alcuni export (es. FBX2glTF) geometria e scheletro hanno scale molto diverse: il
+      // modello renderizzato segue i BONE, quindi il box geometrico è fuorviante e l'auto-scale
+      // sballa (modello gigante o puntino → schermo vuoto). Se la posa (box dei bone) è molto
+      // diversa dalla geometria a riposo, usa il box dei bone per scala e centro.
+      const _bones = [];
+      model.traverse(o => { if (o.isSkinnedMesh && o.skeleton) o.skeleton.bones.forEach(b => _bones.push(b)); });
+      if (_bones.length) {
+        const boneBox = new THREE.Box3(); const _bp = new THREE.Vector3(); const seen = new Set();
+        _bones.forEach(b => { if (seen.has(b)) return; seen.add(b); b.getWorldPosition(_bp); boneBox.expandByPoint(_bp); });
+        if (!boneBox.isEmpty()) {
+          const bs = boneBox.getSize(new THREE.Vector3());
+          const ratio = bs.y / (size.y || 1e-6);
+          if (bs.y > 1e-4 && (ratio > 1.5 || ratio < 0.66)) {
+            boneBox.expandByVector(bs.clone().multiplyScalar(0.12)); // margine: la mesh sborda oltre i bone
+            box = boneBox; size = box.getSize(new THREE.Vector3());
+            console.log('[Avatar load] uso bounding box dei bone (mesh skinnata disallineata):', size.toArray().map(x=>+x.toFixed(3)));
+          }
+        }
+      }
       const center = box.getCenter(new THREE.Vector3());
 
       // Usa l'altezza del pannello avatar come riferimento

@@ -450,6 +450,33 @@ app.post('/api/admin/avatars/:id/publish', (req, res) => {
   res.json({ published });
 });
 
+// ─── Progresso conversione/import modello (SSE) ──────────────────────────────
+const uploadJobs = new Map(); // jobId → Set<res>
+function emitUploadProgress(jobId, payload) {
+  if (!jobId) return;
+  const set = uploadJobs.get(jobId);
+  if (!set || !set.size) return;
+  const line = `data: ${JSON.stringify(payload)}\n\n`;
+  for (const res of set) { try { res.write(line); } catch {} }
+}
+app.get('/api/admin/upload-progress/:jobId', requireAdmin, (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no', // evita il buffering di nginx sugli stream SSE
+  });
+  res.flushHeaders?.();
+  res.write(': connected\n\n');
+  const jobId = req.params.jobId;
+  if (!uploadJobs.has(jobId)) uploadJobs.set(jobId, new Set());
+  uploadJobs.get(jobId).add(res);
+  req.on('close', () => {
+    const s = uploadJobs.get(jobId);
+    if (s) { s.delete(res); if (!s.size) uploadJobs.delete(jobId); }
+  });
+});
+
 // ─── Upload FBX / GLB / GLTF per avatar specifico ────────────────────────────
 const uploadFbx = multer({ storage: multer.diskStorage({
   destination: (req, file, cb) => cb(null, join(__dirname, 'public', 'models')),
@@ -462,9 +489,11 @@ const uploadFbx = multer({ storage: multer.diskStorage({
 app.post('/api/admin/avatars/:id/upload-model', uploadFbx.single('model'), async (req, res) => {
   const rawGlb  = join(__dirname, 'public', 'models', `${req.params.id}_raw.glb`);
   const outGlb  = join(__dirname, 'public', 'models', `${req.params.id}.glb`);
+  const jobId = req.query.jobId;
   try {
     if (!req.file) return res.status(400).json({ error: 'Nessun file ricevuto' });
     const ext = req.file.originalname.split('.').pop().toLowerCase();
+    emitUploadProgress(jobId, { stage: 'received', ext });
     const tmpFile = join(__dirname, 'public', 'models', req.file.filename);
 
     if (ext === 'fbx') {
@@ -499,6 +528,7 @@ app.post('/api/admin/avatars/:id/upload-model', uploadFbx.single('model'), async
         try {
           fs.accessSync(fbx2gltf, fs.constants.X_OK);
           console.log('[FBX] Uso fbx2gltf:', fbx2gltf);
+          emitUploadProgress(jobId, { stage: 'converting', tool: 'FBX2glTF' });
           const rawGlbBase = rawGlb.replace(/\.glb$/, '');
           await promisify(execFile)(fbx2gltf, ['--binary', tmpFile, '--output', rawGlbBase]);
           converted = fs.existsSync(rawGlb) && fs.statSync(rawGlb).size > 1024;
@@ -513,6 +543,7 @@ app.post('/api/admin/avatars/:id/upload-model', uploadFbx.single('model'), async
       // Preferito ad assimp perché assimp su FBX complessi perde molte mesh in export.
       if (!converted) {
         console.log('[FBX] Provo Blender...');
+        emitUploadProgress(jobId, { stage: 'converting', tool: 'Blender' });
         const blenderScript = `
 import bpy, sys
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -546,6 +577,7 @@ print("Done")
         try {
           const { exec } = await import('child_process');
           console.log('[FBX] Provo assimp (fallback)...');
+          emitUploadProgress(jobId, { stage: 'converting', tool: 'assimp' });
           await promisify(exec)(`assimp export "${tmpFile}" "${rawGlb}"`, { timeout: 120000 });
           converted = fs.existsSync(rawGlb) && fs.statSync(rawGlb).size > 1024;
           if (converted) {
@@ -608,6 +640,9 @@ print("Done")
 
     // Prima passa: comprime le texture e raccoglie i chunk
     const imgBvSet = new Set((json.images || []).map(img => img.bufferView).filter(i => i !== undefined));
+    const imgTotal = imgBvSet.size;
+    let imgDone = 0;
+    emitUploadProgress(jobId, { stage: 'compressing', done: 0, total: imgTotal });
 
     for (let bvIdx = 0; bvIdx < (json.bufferViews || []).length; bvIdx++) {
       const bv = json.bufferViews[bvIdx];
@@ -628,6 +663,7 @@ print("Done")
             outData = compressed;
             img.mimeType = 'image/jpeg';
           } catch (e) { console.error('Sharp compress error bv'+bvIdx+':', e.message); }
+          emitUploadProgress(jobId, { stage: 'compressing', done: ++imgDone, total: imgTotal });
         }
       }
 
@@ -652,6 +688,7 @@ print("Done")
     Buffer.from(newJsonStr).copy(jsonPadded);
     const binPadded = Buffer.alloc(Math.ceil(newBin.length / 4) * 4, 0x00);
     newBin.copy(binPadded);
+    emitUploadProgress(jobId, { stage: 'finalizing' });
     const totalLen = 12 + 8 + jsonPadded.length + 8 + binPadded.length;
     const header = Buffer.alloc(12); header.writeUInt32LE(0x46546C67,0); header.writeUInt32LE(2,4); header.writeUInt32LE(totalLen,8);
     const jh = Buffer.alloc(8); jh.writeUInt32LE(jsonPadded.length,0); jh.writeUInt32LE(0x4E4F534A,4);
@@ -684,10 +721,12 @@ print("Done")
       db.prepare("UPDATE avatars SET model_file = ?, updated_at = datetime('now') WHERE id = ?")
         .run(modelFile, req.params.id);
     }
+    emitUploadProgress(jobId, { stage: 'done', model_file: modelFile, originalKB, compressedKB });
     res.json({ ok: true, model_file: modelFile, originalKB, compressedKB, animDuration });
   } catch (err) {
     console.error('Upload model error:', err);
     try { if (fs.existsSync(rawGlb)) fs.unlinkSync(rawGlb); } catch {}
+    emitUploadProgress(jobId, { stage: 'error', error: err.message });
     res.status(500).json({ error: 'Conversione fallita: ' + err.message });
   }
 });
