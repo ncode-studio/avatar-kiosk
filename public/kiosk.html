@@ -4164,17 +4164,19 @@ function loadGLBAvatar(url) {
       model.position.y = -box.min.y * scale + CONFIG.avatarOffsetY;
       model.rotation.y = CONFIG.avatarRotY;
 
-      // Nascondi shadow plane / ground disc da conversione assimp
+      // Nascondi shadow plane / ground disc da conversione assimp.
+      // Solo mesh DAVVERO piatte (aspetto verticale <2% della base). NON filtrare per nome:
+      // molti modelli hanno mesh del corpo chiamate "Plane"/"BézierCircle" (primitive non
+      // rinominate dall'artista) che NON sono piatte e non vanno nascoste.
       model.traverse(o => {
         if (!o.isMesh) return;
         o.geometry.computeBoundingBox();
         const s = o.geometry.boundingBox.getSize(new THREE.Vector3());
         const flatRatio = s.y / Math.max(s.x, s.z, 0.0001);
         const isFlat = flatRatio < 0.02;
-        const isShadowName = /shadow|ground|plane|circle|disc|floor/i.test(o.name);
-        if (isFlat || isShadowName) {
+        if (isFlat) {
           o.visible = false;
-          console.log('[Avatar] nascosto mesh:', o.name, 'flatRatio:', flatRatio.toFixed(5));
+          console.log('[Avatar] nascosto mesh piatta (shadow plane):', o.name, 'flatRatio:', flatRatio.toFixed(5));
         }
       });
 
