@@ -23,3 +23,6 @@ chrome-kiosk-profile/
 *.log
 npm-debug.log*
 data/
+
+# Spec di implementazione locali (work-in-progress, non tracciate per ora)
+docs/spec/
