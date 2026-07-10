@@ -665,11 +665,11 @@
 
       <!-- Step 3: Trascrizione (STT / Whisper) -->
       <div id="ws3" style="display:none">
-        <div class="field" style="margin-bottom:14px">
+        <div class="field" style="margin-bottom:14px" id="wiz-stt-key-field">
           <label>OpenAI API Key <span class="hint" style="margin:0">(lascia vuoto per usare default .env)</span></label>
           <input id="wiz-stt-key" type="password" autocomplete="new-password" placeholder="default da .env"/>
         </div>
-        <div class="field" style="margin-bottom:14px">
+        <div class="field" style="margin-bottom:14px" id="wiz-stt-model-field">
           <label>Modello Whisper</label>
           <div class="model-row">
             <input id="wiz-stt-model" type="text" placeholder="whisper-1"/>
@@ -679,6 +679,14 @@
         <div class="field">
           <label>Lingua trascrizione</label>
           <input id="wiz-stt-language" type="text" placeholder="it"/>
+        </div>
+        <div class="field" style="margin-top:14px">
+          <label>Provider STT</label>
+          <select id="wiz-stt-provider" onchange="toggleSttFields('wiz')">
+            <option value="">Default globale (.env)</option>
+            <option value="openai">OpenAI Whisper (cloud)</option>
+            <option value="nigen">nigen (self-hosted)</option>
+          </select>
         </div>
       </div>
 
@@ -1086,7 +1094,7 @@
         <div class="section">
           <h3>Speech to Text</h3>
           <div class="fields" style="gap:12px;margin-bottom:12px">
-            <div class="field">
+            <div class="field" id="f-stt-key-field">
               <label>API Key</label>
               <input type="password" autocomplete="new-password" id="f-stt-api-key" placeholder="default da .env"/>
             </div>
@@ -1095,7 +1103,15 @@
               <input type="text" id="f-stt-language" placeholder="it"/>
             </div>
           </div>
-          <div class="field">
+          <div class="field" style="margin-bottom:12px">
+            <label>Provider STT</label>
+            <select id="f-stt-provider" onchange="toggleSttFields('f')">
+              <option value="">Default globale (.env)</option>
+              <option value="openai">OpenAI Whisper (cloud)</option>
+              <option value="nigen">nigen (self-hosted)</option>
+            </select>
+          </div>
+          <div class="field" id="f-stt-model-field">
             <label>Modello</label>
             <div class="model-row">
               <input type="text" id="f-stt-model" placeholder="whisper-1"/>
@@ -2397,6 +2413,18 @@ function renderList() {
   });
 }
 
+// ── STT: mostra/nascondi campi Whisper-only in base al provider ───────────────
+// nigen usa large-v3 lato server: API Key e Modello non servono. openai e il
+// default globale ('') li mostrano (il default potrebbe risolvere a openai).
+function toggleSttFields(prefix) {
+  const provider = document.getElementById(`${prefix}-stt-provider`).value;
+  const hide = provider === 'nigen';
+  for (const id of [`${prefix}-stt-key-field`, `${prefix}-stt-model-field`]) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = hide ? 'none' : '';
+  }
+}
+
 // ── Seleziona avatar ──────────────────────────────────────────────────────────
 function selectAvatar(id) {
   currentId = id;
@@ -2446,6 +2474,8 @@ function selectAvatar(id) {
   document.getElementById('f-stt-api-key').value  = a.stt_api_key  || '';
   document.getElementById('f-stt-model').value    = a.stt_model    || '';
   document.getElementById('f-stt-language').value = a.stt_language || '';
+  document.getElementById('f-stt-provider').value = a.stt_provider || '';
+  toggleSttFields('f');
   // TTS
   document.getElementById('f-tts-api-key').value  = a.tts_api_key  || '';
   document.getElementById('f-voice-id').value     = a.voice_id     || '';
@@ -2972,6 +3002,8 @@ function createAvatar() {
   document.getElementById('wiz-stt-key').value   = '';
   document.getElementById('wiz-stt-model').value = '';
   document.getElementById('wiz-stt-language').value = '';
+  document.getElementById('wiz-stt-provider').value = '';
+  toggleSttFields('wiz');
   document.getElementById('wiz-model-label').innerHTML = '<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;display:inline-block;vertical-align:middle;margin-right:6px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Trascina un file .fbx / .glb / .gltf o clicca';
   _wizStep = 0; _wizAiMode = 'embedded'; _wizAiProv = 'anthropic'; _wizAvatarId = null;
   wizAiProv('anthropic');
@@ -3105,6 +3137,7 @@ async function wizCreate() {
     stt_api_key:       document.getElementById('wiz-stt-key').value.trim(),
     stt_model:         document.getElementById('wiz-stt-model').value.trim(),
     stt_language:      document.getElementById('wiz-stt-language').value.trim(),
+    stt_provider:      document.getElementById('wiz-stt-provider').value.trim(),
     avatar_mode:       _wizAiMode,
     ai_provider:       _wizAiProv,
     webhook_url:       '',
@@ -3137,6 +3170,7 @@ async function saveAvatar() {
     stt_api_key:     document.getElementById('f-stt-api-key').value.trim(),
     stt_model:       document.getElementById('f-stt-model').value.trim(),
     stt_language:    document.getElementById('f-stt-language').value.trim(),
+    stt_provider:    document.getElementById('f-stt-provider').value.trim(),
     tts_api_key:     document.getElementById('f-tts-api-key').value.trim(),
     tts_model:       document.getElementById('f-tts-model').value.trim(),
     tts_stability:   parseFloat(document.getElementById('s-tts-stability').value),

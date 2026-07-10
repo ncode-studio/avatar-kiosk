@@ -5,13 +5,14 @@ Sistema di avatar 3D interattivo per kiosk/totem fisici. L'utente parla (o scriv
 ## Architettura
 
 ```
-[Microfono] → STT (Whisper) → [Claude AI] → TTS (ElevenLabs) → [Avatar 3D + Lip Sync]
+[Microfono] → STT (Whisper | self-hosted) → [Claude AI] → TTS (ElevenLabs) → [Avatar 3D + Lip Sync]
 ```
 
 ## Requisiti
 
 - Node.js >= 18
-- API keys: Anthropic, ElevenLabs, OpenAI (per Whisper STT)
+- API keys: Anthropic, ElevenLabs
+- STT a scelta: OpenAI (Whisper cloud) **oppure** un endpoint self-hosted compatibile (vedi [Speech-to-Text](#speech-to-text-multi-provider))
 
 ## Setup
 
@@ -40,6 +41,47 @@ npm run dev
 ### 4. Apri il browser
 
 Vai su `http://localhost:3000`
+
+---
+
+## Speech-to-Text (multi-provider)
+
+Lo STT è **pluggabile**: l'avatar registra l'intero turno di parlato (VAD lato
+browser) e lo invia in un colpo solo a `POST /api/stt`, che lo instrada al
+provider configurato.
+
+Provider disponibili:
+
+| Provider | Valore | Descrizione |
+|----------|--------|-------------|
+| OpenAI Whisper | `openai` | Cloud, a consumo. Richiede `OPENAI_API_KEY`. |
+| Self-hosted (`nigen`) | `nigen` | Endpoint self-hosted compatibile (multipart `POST /upload`, campo `file`, risposta `{ text, duration }`). Nessuna API key esterna. |
+
+### Configurazione globale (`.env`)
+
+```bash
+# Provider di default per tutti gli avatar
+STT_PROVIDER=openai          # openai | nigen
+STT_MODEL=whisper-1          # modello Whisper (solo openai)
+STT_LANGUAGE=it              # lingua trascrizione (ISO 639-1)
+
+# Solo se si usa il provider self-hosted:
+STT_NIGEN_URL=               # base URL dell'endpoint STT (fornito dall'infra)
+# STT_NIGEN_API_KEY=         # opzionale, se l'endpoint richiede auth
+```
+
+### Override per-avatar
+
+Ogni avatar può forzare un provider dal pannello admin (**Speech to Text →
+Provider STT**) tramite la colonna `stt_provider`:
+
+- vuoto (`''`) → usa `STT_PROVIDER` globale
+- `openai` → Whisper (mostra i campi API Key / Modello)
+- `nigen` → self-hosted (nasconde API Key / Modello: la lingua e il modello sono
+  gestiti lato server)
+
+Questo replica il pattern già usato per l'LLM (`ai_provider`): configurazione
+globale con override per singolo avatar.
 
 ---
 
