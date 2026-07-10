@@ -680,6 +680,14 @@
           <label>Lingua trascrizione</label>
           <input id="wiz-stt-language" type="text" placeholder="it"/>
         </div>
+        <div class="field" style="margin-top:14px">
+          <label>Provider STT</label>
+          <select id="wiz-stt-provider">
+            <option value="">Default globale (.env)</option>
+            <option value="openai">OpenAI Whisper (cloud)</option>
+            <option value="nigen">nigen (self-hosted CNA)</option>
+          </select>
+        </div>
       </div>
 
       <!-- Step 4: Avatar 3D -->
@@ -1094,6 +1102,14 @@
               <label>Lingua</label>
               <input type="text" id="f-stt-language" placeholder="it"/>
             </div>
+          </div>
+          <div class="field" style="margin-bottom:12px">
+            <label>Provider STT</label>
+            <select id="f-stt-provider">
+              <option value="">Default globale (.env)</option>
+              <option value="openai">OpenAI Whisper (cloud)</option>
+              <option value="nigen">nigen (self-hosted CNA)</option>
+            </select>
           </div>
           <div class="field">
             <label>Modello</label>
@@ -2446,6 +2462,7 @@ function selectAvatar(id) {
   document.getElementById('f-stt-api-key').value  = a.stt_api_key  || '';
   document.getElementById('f-stt-model').value    = a.stt_model    || '';
   document.getElementById('f-stt-language').value = a.stt_language || '';
+  document.getElementById('f-stt-provider').value = a.stt_provider || '';
   // TTS
   document.getElementById('f-tts-api-key').value  = a.tts_api_key  || '';
   document.getElementById('f-voice-id').value     = a.voice_id     || '';
@@ -2972,6 +2989,7 @@ function createAvatar() {
   document.getElementById('wiz-stt-key').value   = '';
   document.getElementById('wiz-stt-model').value = '';
   document.getElementById('wiz-stt-language').value = '';
+  document.getElementById('wiz-stt-provider').value = '';
   document.getElementById('wiz-model-label').innerHTML = '<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;display:inline-block;vertical-align:middle;margin-right:6px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Trascina un file .fbx / .glb / .gltf o clicca';
   _wizStep = 0; _wizAiMode = 'embedded'; _wizAiProv = 'anthropic'; _wizAvatarId = null;
   wizAiProv('anthropic');
@@ -3105,6 +3123,7 @@ async function wizCreate() {
     stt_api_key:       document.getElementById('wiz-stt-key').value.trim(),
     stt_model:         document.getElementById('wiz-stt-model').value.trim(),
     stt_language:      document.getElementById('wiz-stt-language').value.trim(),
+    stt_provider:      document.getElementById('wiz-stt-provider').value.trim(),
     avatar_mode:       _wizAiMode,
     ai_provider:       _wizAiProv,
     webhook_url:       '',
@@ -3137,6 +3156,7 @@ async function saveAvatar() {
     stt_api_key:     document.getElementById('f-stt-api-key').value.trim(),
     stt_model:       document.getElementById('f-stt-model').value.trim(),
     stt_language:    document.getElementById('f-stt-language').value.trim(),
+    stt_provider:    document.getElementById('f-stt-provider').value.trim(),
     tts_api_key:     document.getElementById('f-tts-api-key').value.trim(),
     tts_model:       document.getElementById('f-tts-model').value.trim(),
     tts_stability:   parseFloat(document.getElementById('s-tts-stability').value),

@@ -33,6 +33,7 @@ db.exec(`
     stt_api_key           TEXT DEFAULT '',
     stt_model             TEXT DEFAULT '',
     stt_language          TEXT DEFAULT '',
+    stt_provider          TEXT DEFAULT '',   -- '' = usa STT_PROVIDER globale
     tts_api_key           TEXT DEFAULT '',
     tts_model             TEXT DEFAULT '',
     tts_stability               REAL DEFAULT -1,
@@ -130,6 +131,7 @@ const existing = db.prepare("PRAGMA table_info(avatars)").all().map(c => c.name)
 if (!existing.includes('stt_api_key'))     db.exec("ALTER TABLE avatars ADD COLUMN stt_api_key TEXT DEFAULT ''");
 if (!existing.includes('stt_model'))       db.exec("ALTER TABLE avatars ADD COLUMN stt_model TEXT DEFAULT ''");
 if (!existing.includes('stt_language'))    db.exec("ALTER TABLE avatars ADD COLUMN stt_language TEXT DEFAULT ''");
+if (!existing.includes('stt_provider'))    db.exec("ALTER TABLE avatars ADD COLUMN stt_provider TEXT DEFAULT ''");
 if (!existing.includes('tts_api_key'))     db.exec("ALTER TABLE avatars ADD COLUMN tts_api_key TEXT DEFAULT ''");
 if (!existing.includes('tts_model'))       db.exec("ALTER TABLE avatars ADD COLUMN tts_model TEXT DEFAULT ''");
 if (!existing.includes('tts_stability'))   db.exec("ALTER TABLE avatars ADD COLUMN tts_stability REAL DEFAULT -1");

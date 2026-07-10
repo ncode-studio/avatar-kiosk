@@ -76,6 +76,9 @@ const DEFAULT_GREETING   = process.env.AVATAR_GREETING ||
 const DEFAULT_VOICE_ID   = process.env.ELEVENLABS_VOICE_ID || '';
 const DEFAULT_STT_MODEL  = process.env.STT_MODEL    || 'whisper-1';
 const DEFAULT_STT_LANG   = process.env.STT_LANGUAGE || 'it';
+const DEFAULT_STT_PROVIDER = process.env.STT_PROVIDER   || 'openai';
+const STT_NIGEN_URL        = process.env.STT_NIGEN_URL  || '';
+const STT_NIGEN_API_KEY    = process.env.STT_NIGEN_API_KEY || '';
 const DEFAULT_TTS_MODEL  = process.env.TTS_MODEL    || 'eleven_multilingual_v2';
 const DEFAULT_TTS_STAB   = parseFloat(process.env.TTS_STABILITY  || '0.5');
 const DEFAULT_TTS_SIM    = parseFloat(process.env.TTS_SIMILARITY || '0.75');
@@ -377,7 +380,7 @@ app.put('/api/admin/avatars/:id', (req, res) => {
                   'speech_start','speech_end','avatar_scale','avatar_offset_x','avatar_offset_y',
                   'avatar_rot_y','camera_z','camera_y','camera_look_at_y',
                   'overlay_color','overlay_opacity','overlay_height','chat_height','chat_bottom','chat_max_width','chat_align','chat_hide_input',
-                  'stt_api_key','stt_model','stt_language',
+                  'stt_api_key','stt_model','stt_language','stt_provider',
                   'tts_api_key','tts_model','tts_stability','tts_similarity','tts_text_normalization','tts_language_normalization','texture_quality',
                   'ai_provider','ai_max_tokens','anthropic_api_key','anthropic_model','openai_api_key','openai_model',
                   'avatar_mode','webhook_url','webhook_input_template','webhook_output_field','webhook_headers',
@@ -839,6 +842,57 @@ app.post('/api/admin/avatars/:id/upload-icon/:type', uploadIcon.single('icon'), 
   res.json({ ok: true, [col]: iconFile });
 });
 
+// ─── STT providers ───────────────────────────────────────────────────────────
+const WHISPER_HALLUCINATIONS = [
+  'sottotitoli e revisione a cura di qtss',
+  'sottotitoli a cura di qtss',
+  'sub ita by qtss',
+  'sottotitoli creati dalla comunità di amara.org',
+  'amara.org',
+  'grazie per aver guardato',
+  'grazie per la visione',
+  'iscriviti al canale',
+];
+const isWhisperHallucination = (t) =>
+  WHISPER_HALLUCINATIONS.some(h => (t || '').toLowerCase().includes(h));
+
+async function transcribeOpenAI(buffer, mimetype, { sttKey, sttModel, sttLang, sttPrompt }) {
+  const formData = new FormData();
+  formData.append('file', new Blob([buffer], { type: mimetype || 'audio/webm' }), 'audio.webm');
+  formData.append('model', sttModel);
+  formData.append('language', sttLang);
+  formData.append('temperature', '0');
+  formData.append('response_format', 'verbose_json');
+  if (sttPrompt) formData.append('prompt', sttPrompt);
+  const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST', headers: { Authorization: `Bearer ${sttKey}` }, body: formData,
+  });
+  if (!r.ok) throw new Error(`Whisper error: ${await r.text()}`);
+  const data = await r.json();
+  const text = data.text || '';
+  return { text: isWhisperHallucination(text) ? '' : text, duration: data.duration || 0 };
+}
+
+async function transcribeNigen(buffer, mimetype, { sttLang }) {
+  if (!STT_NIGEN_URL) throw new Error('STT_NIGEN_URL non configurato');
+  const formData = new FormData();
+  formData.append('file', new Blob([buffer], { type: mimetype || 'audio/webm' }), 'audio.webm');
+  formData.append('lang', sttLang);
+  const headers = STT_NIGEN_API_KEY ? { Authorization: `Bearer ${STT_NIGEN_API_KEY}` } : {};
+  const r = await fetch(`${STT_NIGEN_URL.replace(/\/$/, '')}/upload`, {
+    method: 'POST', headers, body: formData,
+  });
+  if (!r.ok) throw new Error(`nigen STT error: ${await r.text()}`);
+  const data = await r.json();
+  return { text: data.text || '', duration: data.duration || 0 };
+}
+
+async function transcribeAudio(buffer, mimetype, opts) {
+  return opts.provider === 'nigen'
+    ? transcribeNigen(buffer, mimetype, opts)
+    : transcribeOpenAI(buffer, mimetype, opts);
+}
+
 // ─── Route: STT ──────────────────────────────────────────────────────────────
 app.post('/api/stt', multer({ storage: multer.memoryStorage() }).single('audio'), async (req, res) => {
   try {
@@ -849,39 +903,16 @@ app.post('/api/stt', multer({ storage: multer.memoryStorage() }).single('audio')
       return res.status(429).json({ error: 'Troppe richieste. Riprova tra poco.' });
     }
     const avatar   = getAvatarConfig(req.body?.avatarId);
-    const sttKey    = avatar?.stt_api_key  || process.env.OPENAI_API_KEY;
-    const sttModel  = avatar?.stt_model    || DEFAULT_STT_MODEL;
-    const sttLang   = avatar?.stt_language || DEFAULT_STT_LANG;
-    const sttPrompt = avatar?.stt_prompt   || '';
-    const formData = new FormData();
-    formData.append('file', new Blob([req.file.buffer], { type: req.file.mimetype || 'audio/webm' }), 'audio.webm');
-    formData.append('model', sttModel);
-    formData.append('language', sttLang);
-    formData.append('temperature', '0');
-    formData.append('response_format', 'verbose_json');
-    if (sttPrompt) formData.append('prompt', sttPrompt);
-    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${sttKey}` },
-      body: formData,
+    const provider = avatar?.stt_provider || DEFAULT_STT_PROVIDER;
+    const { text, duration } = await transcribeAudio(req.file.buffer, req.file.mimetype, {
+      provider,
+      sttKey:    avatar?.stt_api_key  || process.env.OPENAI_API_KEY,
+      sttModel:  avatar?.stt_model    || DEFAULT_STT_MODEL,
+      sttLang:   avatar?.stt_language || DEFAULT_STT_LANG,
+      sttPrompt: avatar?.stt_prompt   || '',
     });
-    if (!response.ok) throw new Error(`Whisper error: ${await response.text()}`);
-    const data = await response.json();
-    const sttSeconds = Math.ceil(data.duration || 0);
-    logRequest(req.body?.avatarId, 'stt', rl.ip || getClientIp(req), false, sttSeconds, 0);
-    const WHISPER_HALLUCINATIONS = [
-      'sottotitoli e revisione a cura di qtss',
-      'sottotitoli a cura di qtss',
-      'sub ita by qtss',
-      'sottotitoli creati dalla comunità di amara.org',
-      'amara.org',
-      'grazie per aver guardato',
-      'grazie per la visione',
-      'iscriviti al canale',
-    ];
-    const transcript = data.text || '';
-    const isHallucination = WHISPER_HALLUCINATIONS.some(h => transcript.toLowerCase().includes(h));
-    res.json({ transcript: isHallucination ? '' : transcript });
+    logRequest(req.body?.avatarId, 'stt', rl.ip || getClientIp(req), false, Math.ceil(duration), 0);
+    res.json({ transcript: text });
   } catch (error) {
     console.error('STT error:', error);
     res.status(500).json({ error: error.message });
